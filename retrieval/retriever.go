@@ -10,18 +10,21 @@ import (
 	"github.com/openmemind/memind-go/vector"
 )
 
+// MemoryRetriever - 记忆检索器接口
 type MemoryRetriever interface {
 	Retrieve(req memind.RetrievalRequest) (*memind.RetrievalResult, error)
 	RegisterStrategy(s RetrievalStrategy)
 	OnDataChanged(memoryID memind.MemoryId)
 }
 
+// DefaultRetriever - 默认记忆检索器，组合策略工厂和意图路由器
 type DefaultRetriever struct {
-	factory      *StrategyFactory
-	router       IntentionRouter
-	config       memind.RetrievalOptions
+	factory *StrategyFactory
+	router  IntentionRouter
+	config  memind.RetrievalOptions
 }
 
+// NewRetriever - 创建检索器，注册 Simple 和 Deep 两种策略
 func NewRetriever(
 	memStore store.MemoryStore,
 	vecStore vector.MemoryVector,
@@ -40,13 +43,15 @@ func NewRetriever(
 	}
 }
 
+// RegisterStrategy - 注册自定义检索策略
 func (r *DefaultRetriever) RegisterStrategy(s RetrievalStrategy) {
 	r.factory.Register(s)
 }
 
-func (r *DefaultRetriever) OnDataChanged(memoryID memind.MemoryId) {
-}
+// OnDataChanged - 数据变更回调（当前为空操作）
+func (r *DefaultRetriever) OnDataChanged(memoryID memind.MemoryId) {}
 
+// Retrieve - 执行检索：准入检查 → 意图路由 → 策略分发
 func (r *DefaultRetriever) Retrieve(req memind.RetrievalRequest) (*memind.RetrievalResult, error) {
 	query := strings.TrimSpace(req.Query)
 	if query == "" {
@@ -63,8 +68,6 @@ func (r *DefaultRetriever) Retrieve(req memind.RetrievalRequest) (*memind.Retrie
 
 	strategyName := string(r.config.Common.DefaultStrategy)
 	if req.Config.StrategyConfig != (memind.StrategyConfig{}) {
-		if req.Config != (memind.RetrievalConfig{}) {
-		}
 	}
 
 	strategy, err := r.factory.Get(strategyName)

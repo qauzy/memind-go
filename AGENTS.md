@@ -3,7 +3,7 @@
 ## Entrypoint & Build
 
 - CLI: `cmd/memind/main.go` — builds `engine.Builder().Store(store.NewInMemoryStore()).Build()` → starts HTTP server.
-- Single module `github.com/openmemind/memind-go`, Go 1.22, zero runtime deps.
+- Single module `github.com/openmemind/memind-go`, requires Go 1.25 (due to `modernc.org/sqlite`).
 - No codegen, migrations, or build steps beyond `go build`.
 
 ## Commands
@@ -22,6 +22,7 @@ go run ./cmd/memind/ -addr :8080   # start server
 | `memind` (root) | Types, interfaces, config — **never import subpackages** |
 | `engine/` | `Builder()` + `Memory` impl — wires all subpackages |
 | `store/` | `MemoryStore` interface + `InMemoryStore` |
+| `store/sql/` | SQLite (`NewSQLiteStore`) / MySQL (`NewMySQLStore`) persistence — shared `database/sql` impl |
 | `vector/` | `MemoryVector` interface + built-in hash-embedding engine |
 | `textsearch/` | `MemoryTextSearch` interface + BM25 |
 | `extraction/` | RawData → Item → Insight pipeline |
@@ -37,7 +38,14 @@ go run ./cmd/memind/ -addr :8080   # start server
 - **Circular imports**: root `memind` package can never import subpackages. All wiring lives in `engine/`.
 - **LLM is optional**: `llm.StructuredChatClient` defaults to NoOp. Register per-slot with `Builder().ChatClientForSlot(slot, client)`.
 - **All storage defaults to InMemory**: `store.NewInMemoryStore()`, `vector.NewInMemoryVectorStore()`, `textsearch.NewInMemoryBM25Search()`. No DB needed.
+- **SQL persistence available**: `store/sql.NewSQLiteStore(dsn)` and `store/sql.NewMySQLStore(dsn)`. Both implement `store.MemoryStore` and auto-migrate on init.
 - **Vector search is built-in**: hash-based 128-dim embedding + cosine similarity. No external vector DB.
+
+## Conventions (updated 2026-05-27)
+
+- **Git 管理**：任何新增文件必须纳入 git 跟踪（`git add`），不得遗漏。
+- **函数头修改记录**：所有代码修改需在函数头添加 `// Modified: YYYY-MM-DD - 修改内容说明`
+- **新增函数中文注释**：每个新增函数必须有 `// 函数名 - 中文功能说明` 注释头。
 
 ## Testing
 

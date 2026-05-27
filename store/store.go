@@ -6,6 +6,7 @@ import (
 	memind "github.com/openmemind/memind-go"
 )
 
+// RawDataOperations - 原始数据存储操作接口
 type RawDataOperations interface {
 	UpsertRawData(memoryID memind.MemoryId, rawData []*memind.MemoryRawData) error
 	GetRawData(memoryID memind.MemoryId, rawDataID string) (*memind.MemoryRawData, error)
@@ -17,6 +18,7 @@ type RawDataOperations interface {
 	DeleteRawData(memoryID memind.MemoryId, rawDataID string) error
 }
 
+// ItemOperations - 记忆条目存储操作接口
 type ItemOperations interface {
 	UpsertItems(memoryID memind.MemoryId, items []*memind.MemoryItem) error
 	GetItem(memoryID memind.MemoryId, itemID int64) (*memind.MemoryItem, error)
@@ -25,6 +27,7 @@ type ItemOperations interface {
 	GetItemByHash(memoryID memind.MemoryId, hash string) (*memind.MemoryItem, error)
 }
 
+// InsightOperations - 洞察存储操作接口
 type InsightOperations interface {
 	UpsertInsightTypes(types []*memind.MemoryInsightType) error
 	GetInsightType(name string) (*memind.MemoryInsightType, error)
@@ -37,6 +40,7 @@ type InsightOperations interface {
 	DeleteInsights(memoryID memind.MemoryId, insightIDs []int64) error
 }
 
+// MemoryStore - 存储层总接口，聚合原始数据、条目、洞察三类操作
 type MemoryStore interface {
 	RawData() RawDataOperations
 	Items() ItemOperations

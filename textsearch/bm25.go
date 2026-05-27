@@ -2,182 +2,201 @@ package textsearch
 
 import (
 	"math"
+	"sort"
 	"strings"
 	"sync"
 
 	memind "github.com/openmemind/memind-go"
 )
 
+// bm25Index - BM25 索引，按 MemoryID 和 SearchTarget 组织
+type bm25Index struct {
+	documents map[string]int            // documentID → doc length (word count)
+	terms     map[string]map[string]int // term → documentID → frequency
+	avgDocLen float64
+	numDocs   int
+}
+
+// InMemoryBM25Search - 内存版 BM25 全文搜索引擎
+type InMemoryBM25Search struct {
+	mu    sync.RWMutex
+	store map[memind.MemoryId]map[SearchTarget]*bm25Index
+}
+
+// NewInMemoryBM25Search - 创建 BM25 搜索实例
+func NewInMemoryBM25Search() *InMemoryBM25Search {
+	return &InMemoryBM25Search{
+		store: make(map[memind.MemoryId]map[SearchTarget]*bm25Index),
+	}
+}
+
 const (
 	k1 = 1.5
 	b  = 0.75
 )
 
-type indexEntry struct {
-	docID    string
-	text     string
-	avgLen   float64
-	totalDocs int
-}
-
-type bm25Store struct {
-	docs   map[string]indexEntry
-	terms  map[string]map[string]int
-}
-
-type InMemoryBM25Search struct {
-	mu       sync.RWMutex
-	indices  map[string]map[SearchTarget]*bm25Store
-}
-
-var _ MemoryTextSearch = (*InMemoryBM25Search)(nil)
-
-func NewInMemoryBM25Search() *InMemoryBM25Search {
-	return &InMemoryBM25Search{
-		indices: make(map[string]map[SearchTarget]*bm25Store),
-	}
-}
-
-func (s *InMemoryBM25Search) key(memID memind.MemoryId) string {
-	return memID.Identifier()
-}
-
-func (s *InMemoryBM25Search) getStore(memoryID memind.MemoryId, target SearchTarget) *bm25Store {
-	k := s.key(memoryID)
-	if s.indices[k] == nil {
-		s.indices[k] = make(map[SearchTarget]*bm25Store)
-	}
-	if s.indices[k][target] == nil {
-		s.indices[k][target] = &bm25Store{
-			docs:  make(map[string]indexEntry),
-			terms: make(map[string]map[string]int),
-		}
-	}
-	return s.indices[k][target]
-}
-
+// Search - 对指定 memory 和 target 执行 BM25 搜索
 func (s *InMemoryBM25Search) Search(memoryID memind.MemoryId, query string, topK int, target SearchTarget) ([]Result, error) {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
-	st := s.getStore(memoryID, target)
-	if len(st.docs) == 0 {
-		return nil, nil
-	}
-	queryTerms := tokenize(query)
-	if len(queryTerms) == 0 {
-		return nil, nil
-	}
-	totalDocs := len(st.docs)
-	var avgLen float64
-	for _, doc := range st.docs {
-		avgLen += doc.avgLen
-	}
-	if totalDocs > 0 {
-		avgLen /= float64(totalDocs)
-	}
-	var results []Result
-	for docID, doc := range st.docs {
-		score := 0.0
-		for _, term := range queryTerms {
-			df := len(st.terms[term])
-			if df == 0 {
-				continue
-			}
-			idf := math.Log(1 + (float64(totalDocs-df)+0.5)/(float64(df)+0.5))
-			tf := 0
-			if docTerms, ok := st.terms[term]; ok {
-				tf = docTerms[docID]
-			}
-			docLen := doc.avgLen
-			score += idf * (float64(tf) * (k1 + 1)) / (float64(tf) + k1*(1-b+b*docLen/avgLen))
-		}
-		if score > 0 {
-			results = append(results, Result{
-				DocumentID: docID,
-				Text:       doc.text,
-				Score:      score,
-			})
+	idx := s.getOrCreateIndex(memoryID, target)
+	s.mu.RUnlock()
+
+	terms := tokenize(query)
+	scores := make(map[string]float64)
+
+	for _, term := range terms {
+		df := len(idx.terms[term])
+		for docID, freq := range idx.terms[term] {
+			idf := math.Log(1 + (float64(idx.numDocs)-float64(df)+0.5)/(float64(df)+0.5))
+			docLen := idx.documents[docID]
+			tf := float64(freq) * (k1 + 1) / (float64(freq) + k1*(1-b+b*float64(docLen)/idx.avgDocLen))
+			scores[docID] += idf * tf
 		}
 	}
-	sortByScoreDescBM25(results)
-	if len(results) > topK {
+
+	results := make([]Result, 0, len(scores))
+	for docID, score := range scores {
+		results = append(results, Result{DocumentID: docID, Score: score})
+	}
+
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Score > results[j].Score
+	})
+
+	if topK > 0 && len(results) > topK {
 		results = results[:topK]
 	}
+
 	return results, nil
 }
 
+// Index - 索引单个文档
 func (s *InMemoryBM25Search) Index(memoryID memind.MemoryId, documentID string, text string, target SearchTarget) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	st := s.getStore(memoryID, target)
-	terms := tokenize(text)
-	st.docs[documentID] = indexEntry{
-		docID:    documentID,
-		text:     text,
-		avgLen:   float64(len(terms)),
-		totalDocs: len(st.docs) + 1,
-	}
-	for _, term := range terms {
-		if st.terms[term] == nil {
-			st.terms[term] = make(map[string]int)
-		}
-		st.terms[term][documentID]++
-	}
-	for _, entry := range st.docs {
-		entry.totalDocs = len(st.docs)
-	}
+	idx := s.getOrCreateIndex(memoryID, target)
+	s.addDocument(idx, documentID, text)
 	return nil
 }
 
+// IndexBatch - 批量索引文档
 func (s *InMemoryBM25Search) IndexBatch(memoryID memind.MemoryId, documents map[string]string, target SearchTarget) error {
-	for id, text := range documents {
-		if err := s.Index(memoryID, id, text, target); err != nil {
-			return err
-		}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	idx := s.getOrCreateIndex(memoryID, target)
+	for docID, text := range documents {
+		s.addDocument(idx, docID, text)
 	}
 	return nil
 }
 
+// Remove - 从索引中移除文档
 func (s *InMemoryBM25Search) Remove(memoryID memind.MemoryId, documentID string, target SearchTarget) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	st := s.getStore(memoryID, target)
-	delete(st.docs, documentID)
-	for term, docMap := range st.terms {
-		delete(docMap, documentID)
-		if len(docMap) == 0 {
-			delete(st.terms, term)
-		}
+	idx := s.getOrCreateIndex(memoryID, target)
+	if _, ok := idx.documents[documentID]; !ok {
+		return nil
 	}
-	return nil
-}
 
-func (s *InMemoryBM25Search) Invalidate(memoryID memind.MemoryId) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.indices, s.key(memoryID))
-	return nil
-}
+	docLen := idx.documents[documentID]
+	delete(idx.documents, documentID)
+	idx.numDocs--
 
-func tokenize(text string) []string {
-	text = strings.ToLower(text)
-	words := strings.Fields(text)
-	result := make([]string, 0, len(words))
-	for _, w := range words {
-		w = strings.Trim(w, ".,!?;:\"'()[]{}<>【】「」『』《》，。！？；：、")
-		if w != "" {
-			result = append(result, w)
-		}
-	}
-	return result
-}
-
-func sortByScoreDescBM25(results []Result) {
-	for i := 0; i < len(results); i++ {
-		for j := i + 1; j < len(results); j++ {
-			if results[j].Score > results[i].Score {
-				results[i], results[j] = results[j], results[i]
+	for term, docFreq := range idx.terms {
+		if _, ok := docFreq[documentID]; ok {
+			delete(docFreq, documentID)
+			if len(docFreq) == 0 {
+				delete(idx.terms, term)
 			}
 		}
 	}
+
+	if idx.numDocs > 0 {
+		idx.avgDocLen = (idx.avgDocLen*float64(idx.numDocs+1) - float64(docLen)) / float64(idx.numDocs)
+		if idx.avgDocLen < 0 {
+			idx.avgDocLen = 0
+		}
+	} else {
+		idx.avgDocLen = 0
+	}
+	return nil
+}
+
+// Invalidate - 清空指定 memory 的所有索引
+func (s *InMemoryBM25Search) Invalidate(memoryID memind.MemoryId) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.store, memoryID)
+	return nil
+}
+
+// getOrCreateIndex - 获取或创建指定 memory+target 的 BM25 索引
+func (s *InMemoryBM25Search) getOrCreateIndex(memoryID memind.MemoryId, target SearchTarget) *bm25Index {
+	if s.store[memoryID] == nil {
+		s.store[memoryID] = make(map[SearchTarget]*bm25Index)
+	}
+	if s.store[memoryID][target] == nil {
+		s.store[memoryID][target] = &bm25Index{
+			documents: make(map[string]int),
+			terms:     make(map[string]map[string]int),
+		}
+	}
+	return s.store[memoryID][target]
+}
+
+// addDocument - 向 BM25 索引中添加文档并更新统计
+func (s *InMemoryBM25Search) addDocument(idx *bm25Index, docID, text string) {
+	// 移除旧文档
+	if oldLen, ok := idx.documents[docID]; ok {
+		for term, docFreq := range idx.terms {
+			if _, exists := docFreq[docID]; exists {
+				delete(docFreq, docID)
+				if len(docFreq) == 0 {
+					delete(idx.terms, term)
+				}
+			}
+		}
+		idx.numDocs--
+		idx.avgDocLen = (idx.avgDocLen*float64(idx.numDocs+1) - float64(oldLen)) / float64(max(1, idx.numDocs))
+	}
+
+	terms := tokenize(text)
+	termFreq := make(map[string]int)
+	for _, term := range terms {
+		termFreq[term]++
+	}
+
+	docLen := len(terms)
+	idx.documents[docID] = docLen
+	idx.numDocs++
+
+	for term, freq := range termFreq {
+		if idx.terms[term] == nil {
+			idx.terms[term] = make(map[string]int)
+		}
+		idx.terms[term][docID] = freq
+	}
+
+	idx.avgDocLen = (idx.avgDocLen*float64(idx.numDocs-1) + float64(docLen)) / float64(idx.numDocs)
+}
+
+// tokenize - 分词：小写 + 按非字母数字字符切分
+func tokenize(text string) []string {
+	text = strings.ToLower(text)
+	var tokens []string
+	for _, part := range strings.Fields(text) {
+		cleaned := strings.Trim(part, ".,!?;:\"'()[]{}\u3001\u3002\uff01\uff1f\uff1b\uff1a\u201c\u201d")
+		if cleaned != "" {
+			tokens = append(tokens, cleaned)
+		}
+	}
+	return tokens
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }

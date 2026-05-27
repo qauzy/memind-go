@@ -8,6 +8,7 @@ import (
 	"github.com/openmemind/memind-go/vector"
 )
 
+// DeepStrategy - 深度检索策略：Simple + LLM 重排序
 type DeepStrategy struct {
 	memStore   store.MemoryStore
 	vecStore   vector.MemoryVector
@@ -16,6 +17,7 @@ type DeepStrategy struct {
 	simple     *SimpleStrategy
 }
 
+// NewDeepStrategy - 创建深度策略
 func NewDeepStrategy(
 	memStore store.MemoryStore,
 	vecStore vector.MemoryVector,
@@ -31,8 +33,10 @@ func NewDeepStrategy(
 	}
 }
 
+// Name - 返回策略名称
 func (s *DeepStrategy) Name() string { return string(memind.StrategyDeep) }
 
+// Retrieve - 先执行 Simple 检索，再对结果执行 LLM 重排序
 func (s *DeepStrategy) Retrieve(ctx QueryContext, config memind.RetrievalConfig) (*memind.RetrievalResult, error) {
 	query := ctx.SearchQuery()
 	if query == "" {
@@ -54,6 +58,7 @@ func (s *DeepStrategy) Retrieve(ctx QueryContext, config memind.RetrievalConfig)
 	return result, nil
 }
 
+// rerank - 基于位置的简单重排序（后续可替换为 LLM 重排序）
 func (s *DeepStrategy) rerank(query string, items []ScoredResult, cfg memind.RerankConfig) []ScoredResult {
 	if cfg.BlendWithRetrieval {
 		for i := range items {

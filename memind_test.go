@@ -8,6 +8,7 @@ import (
 	"github.com/openmemind/memind-go/store"
 )
 
+// TestExtractAndRetrieve - 完整流程测试：添加消息 → 提交 → 检索 → 验证非空
 func TestExtractAndRetrieve(t *testing.T) {
 	mem := engine.Builder().
 		Store(store.NewInMemoryStore()).
@@ -50,6 +51,7 @@ func TestExtractAndRetrieve(t *testing.T) {
 	}
 }
 
+// TestEmptyQuery - 空查询应返回空结果
 func TestEmptyQuery(t *testing.T) {
 	mem := engine.Builder().
 		Store(store.NewInMemoryStore()).
@@ -68,6 +70,7 @@ func TestEmptyQuery(t *testing.T) {
 	}
 }
 
+// TestDirectExtract - 直接提取测试（不经缓冲区）
 func TestDirectExtract(t *testing.T) {
 	mem := engine.Builder().
 		Store(store.NewInMemoryStore()).

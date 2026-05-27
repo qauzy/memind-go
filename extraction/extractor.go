@@ -12,20 +12,23 @@ import (
 	"github.com/openmemind/memind-go/vector"
 )
 
+// MemoryExtractor - 提取管线接口
 type MemoryExtractor interface {
 	Extract(req memind.ExtractionRequest) (*memind.ExtractionResult, error)
 	AddMessage(memoryID memind.MemoryId, msg memind.Message, config memind.ExtractionConfig) (*memind.ExtractionResult, error)
 }
 
+// DefaultExtractor - 默认提取器，按 RawData → Item → Insight 三阶段执行
 type DefaultExtractor struct {
-	memStore  store.MemoryStore
-	buf       buffer.MemoryBuffer
-	vector    vector.MemoryVector
+	memStore   store.MemoryStore
+	buf        buffer.MemoryBuffer
+	vector     vector.MemoryVector
 	textSearch tsearch.MemoryTextSearch
-	llm       *llm.ChatClientRegistry
-	opts      memind.ExtractionOptions
+	llm        *llm.ChatClientRegistry
+	opts       memind.ExtractionOptions
 }
 
+// NewExtractor - 创建默认提取器实例
 func NewExtractor(
 	memStore store.MemoryStore,
 	buf buffer.MemoryBuffer,
@@ -35,15 +38,16 @@ func NewExtractor(
 	opts memind.ExtractionOptions,
 ) *DefaultExtractor {
 	return &DefaultExtractor{
-		memStore:  memStore,
-		buf:       buf,
-		vector:    vec,
+		memStore:   memStore,
+		buf:        buf,
+		vector:     vec,
 		textSearch: ts,
-		llm:       llm,
-		opts:      opts,
+		llm:        llm,
+		opts:       opts,
 	}
 }
 
+// Extract - 执行完整提取流程：原始内容 → 原始数据 → 条目 → 洞察
 func (e *DefaultExtractor) Extract(req memind.ExtractionRequest) (*memind.ExtractionResult, error) {
 	start := time.Now()
 	cfg := req.Config
@@ -79,6 +83,7 @@ func (e *DefaultExtractor) Extract(req memind.ExtractionRequest) (*memind.Extrac
 	}, nil
 }
 
+// AddMessage - 添加消息到缓冲区，达到批处理阈值时自动触发提取
 func (e *DefaultExtractor) AddMessage(memoryID memind.MemoryId, msg memind.Message, config memind.ExtractionConfig) (*memind.ExtractionResult, error) {
 	if err := e.buf.PendingConversation().Add(memoryID, msg); err != nil {
 		return nil, err
@@ -97,6 +102,7 @@ func (e *DefaultExtractor) AddMessage(memoryID memind.MemoryId, msg memind.Messa
 	}, nil
 }
 
+// commitMessages - 将待提交消息拼接为对话文本并执行提取
 func (e *DefaultExtractor) commitMessages(memoryID memind.MemoryId, config memind.ExtractionConfig) (*memind.ExtractionResult, error) {
 	msgs, err := e.buf.PendingConversation().Get(memoryID)
 	if err != nil || len(msgs) == 0 {
@@ -131,6 +137,7 @@ func (e *DefaultExtractor) commitMessages(memoryID memind.MemoryId, config memin
 	})
 }
 
+// extractRawData - 第一阶段：将原始内容封装为 MemoryRawData 并存储
 func (e *DefaultExtractor) extractRawData(memoryID memind.MemoryId, content memind.RawContent, metadata map[string]any, cfg memind.ExtractionConfig) (*RawDataExtractResult, error) {
 	if !e.opts.RawData.Enabled {
 		existing, _ := e.memStore.RawData().ListRawData(memoryID)
@@ -167,6 +174,7 @@ func (e *DefaultExtractor) extractRawData(memoryID memind.MemoryId, content memi
 	}, nil
 }
 
+// extractItems - 第二阶段：从原始数据中提取结构化 MemoryItem
 func (e *DefaultExtractor) extractItems(memoryID memind.MemoryId, rawResult *RawDataExtractResult, cfg memind.ExtractionConfig, language string) (*ItemExtractResult, error) {
 	if !e.opts.Item.Enabled {
 		return &ItemExtractResult{}, nil
@@ -251,6 +259,7 @@ func (e *DefaultExtractor) extractItems(memoryID memind.MemoryId, rawResult *Raw
 	}, nil
 }
 
+// extractInsights - 第三阶段：基于提取的条目生成洞察（当前为占位实现）
 func (e *DefaultExtractor) extractInsights(memoryID memind.MemoryId, itemResult *ItemExtractResult, cfg memind.ExtractionConfig) (*InsightExtractResult, error) {
 	if !cfg.EnableInsight || !e.opts.Insight.Enabled || len(itemResult.NewItems) == 0 {
 		return &InsightExtractResult{}, nil
@@ -258,6 +267,7 @@ func (e *DefaultExtractor) extractInsights(memoryID memind.MemoryId, itemResult 
 	return &InsightExtractResult{}, nil
 }
 
+// simpleHash - 基于字符串的简单哈希函数，用于去重
 func simpleHash(s string) string {
 	var h int64 = 0
 	for _, c := range s {
@@ -266,6 +276,7 @@ func simpleHash(s string) string {
 	return fmt.Sprintf("%x", h)
 }
 
+// dedupTypes - 按名称去重洞察类型列表
 func dedupTypes(types []memind.MemoryInsightType) []memind.MemoryInsightType {
 	seen := make(map[string]bool)
 	var result []memind.MemoryInsightType

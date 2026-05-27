@@ -1,49 +1,33 @@
 package tracing
 
-import "time"
+import (
+	"time"
 
-type Span struct {
-	Name       string                 `json:"name"`
-	StartTime  time.Time              `json:"startTime"`
-	EndTime    time.Time              `json:"endTime"`
-	Attributes map[string]any         `json:"attributes,omitempty"`
-	Status     string                 `json:"status"`
-	Children   []*Span                `json:"children,omitempty"`
-}
+	memind "github.com/openmemind/memind-go"
+)
 
-type TraceContext struct {
-	TraceID string `json:"traceId"`
-	Spans   []*Span `json:"spans"`
-}
-
+// MemoryObserver - 可观测性接口，记录内存系统的各类事件
 type MemoryObserver interface {
-	Observe(spanName string, attrs map[string]any, fn func() error) error
+	OnExtractionStart(memoryID memind.MemoryId, contentType string)
+	OnExtractionEnd(memoryID memind.MemoryId, duration time.Duration, itemCount int, err error)
+	OnRetrievalStart(memoryID memind.MemoryId, strategy string)
+	OnRetrievalEnd(memoryID memind.MemoryId, duration time.Duration, resultCount int, err error)
+	OnLLMCall(slot string, duration time.Duration, promptTokens int, err error)
+	OnItemExtracted(memoryID memind.MemoryId, item *memind.MemoryItem)
+	OnInsightGenerated(memoryID memind.MemoryId, insight *memind.MemoryInsight)
+	OnError(component string, err error)
 }
 
+// NoOpObserver - 空操作实现，默认使用
 type NoOpObserver struct{}
 
-func (o *NoOpObserver) Observe(spanName string, attrs map[string]any, fn func() error) error {
-	return fn()
+func (o *NoOpObserver) OnExtractionStart(memoryID memind.MemoryId, contentType string) {}
+func (o *NoOpObserver) OnExtractionEnd(memoryID memind.MemoryId, duration time.Duration, itemCount int, err error) {
 }
-
-type SimpleObserver struct {
-	traces []*TraceContext
+func (o *NoOpObserver) OnRetrievalStart(memoryID memind.MemoryId, strategy string) {}
+func (o *NoOpObserver) OnRetrievalEnd(memoryID memind.MemoryId, duration time.Duration, resultCount int, err error) {
 }
-
-func NewSimpleObserver() *SimpleObserver {
-	return &SimpleObserver{}
-}
-
-func (o *SimpleObserver) Observe(spanName string, attrs map[string]any, fn func() error) error {
-	start := time.Now()
-	err := fn()
-	if err == nil {
-		return nil
-	}
-	_ = start
-	return err
-}
-
-func (o *SimpleObserver) Traces() []*TraceContext {
-	return o.traces
-}
+func (o *NoOpObserver) OnLLMCall(slot string, duration time.Duration, promptTokens int, err error) {}
+func (o *NoOpObserver) OnItemExtracted(memoryID memind.MemoryId, item *memind.MemoryItem)          {}
+func (o *NoOpObserver) OnInsightGenerated(memoryID memind.MemoryId, insight *memind.MemoryInsight) {}
+func (o *NoOpObserver) OnError(component string, err error)                                        {}

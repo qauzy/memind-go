@@ -2,6 +2,7 @@ package memind
 
 import "time"
 
+// Memory - memind 核心接口，提供记忆提取、检索、上下文构建等全部功能
 type Memory interface {
 	Extract(req ExtractionRequest) (*ExtractionResult, error)
 	AddMessages(memoryID MemoryId, messages []Message, config ExtractionConfig) (*ExtractionResult, error)
@@ -14,12 +15,14 @@ type Memory interface {
 	Close() error
 }
 
+// StoreProvider - 存储层提供者接口，供 engine 依赖注入
 type StoreProvider interface {
 	RawData() RawDataStore
 	Items() ItemStore
 	Insights() InsightStore
 }
 
+// RawDataStore - 原始数据存储接口
 type RawDataStore interface {
 	UpsertRawData(memoryID MemoryId, rawData []*MemoryRawData) error
 	GetRawData(memoryID MemoryId, rawDataID string) (*MemoryRawData, error)
@@ -31,6 +34,7 @@ type RawDataStore interface {
 	DeleteRawData(memoryID MemoryId, rawDataID string) error
 }
 
+// ItemStore - 记忆条目存储接口
 type ItemStore interface {
 	UpsertItems(memoryID MemoryId, items []*MemoryItem) error
 	GetItem(memoryID MemoryId, itemID int64) (*MemoryItem, error)
@@ -39,6 +43,7 @@ type ItemStore interface {
 	GetItemByHash(memoryID MemoryId, hash string) (*MemoryItem, error)
 }
 
+// InsightStore - 洞察存储接口
 type InsightStore interface {
 	UpsertInsightTypes(types []*MemoryInsightType) error
 	GetInsightType(name string) (*MemoryInsightType, error)
@@ -51,21 +56,15 @@ type InsightStore interface {
 	DeleteInsights(memoryID MemoryId, insightIDs []int64) error
 }
 
+// ExtractorProvider - 提取器提供者接口
 type ExtractorProvider interface {
 	Extract(req ExtractionRequest) (*ExtractionResult, error)
 	AddMessage(memoryID MemoryId, msg Message, config ExtractionConfig) (*ExtractionResult, error)
 }
 
+// RetrieverProvider - 检索器提供者接口
 type RetrieverProvider interface {
 	Retrieve(req RetrievalRequest) (*RetrievalResult, error)
 	RegisterStrategy(strategyName string, strategy any)
 	OnDataChanged(memoryID MemoryId)
-}
-
-func (m Message) ContentString() string {
-	var s string
-	for _, b := range m.Content {
-		s += b.Text + " "
-	}
-	return s
 }

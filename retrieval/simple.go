@@ -12,12 +12,14 @@ import (
 	"github.com/openmemind/memind-go/vector"
 )
 
+// SimpleStrategy - 简单检索策略：向量搜索 + BM25 + RRF 融合
 type SimpleStrategy struct {
-	memStore  store.MemoryStore
-	vecStore  vector.MemoryVector
+	memStore   store.MemoryStore
+	vecStore   vector.MemoryVector
 	textSearch tsearch.MemoryTextSearch
 }
 
+// NewSimpleStrategy - 创建简单策略
 func NewSimpleStrategy(
 	memStore store.MemoryStore,
 	vecStore vector.MemoryVector,
@@ -30,8 +32,10 @@ func NewSimpleStrategy(
 	}
 }
 
+// Name - 返回策略名称
 func (s *SimpleStrategy) Name() string { return string(memind.StrategySimple) }
 
+// Retrieve - 执行三层检索：洞察(T1) + 条目向量/文本(T2) + 原始数据(T3) → RRF 融合
 func (s *SimpleStrategy) Retrieve(ctx QueryContext, config memind.RetrievalConfig) (*memind.RetrievalResult, error) {
 	query := ctx.SearchQuery()
 	if query == "" {
@@ -109,6 +113,7 @@ func (s *SimpleStrategy) Retrieve(ctx QueryContext, config memind.RetrievalConfi
 	}, nil
 }
 
+// searchInsights - 对洞察层执行向量搜索
 func (s *SimpleStrategy) searchInsights(memoryID memind.MemoryId, query string, cfg memind.TierConfig) ([]ScoredResult, error) {
 	insights, err := s.memStore.Insights().ListInsights(memoryID)
 	if err != nil {
@@ -143,6 +148,7 @@ func (s *SimpleStrategy) searchInsights(memoryID memind.MemoryId, query string, 
 	return results, nil
 }
 
+// searchItemsVector - 对条目层执行向量搜索
 func (s *SimpleStrategy) searchItemsVector(memoryID memind.MemoryId, query string, cfg memind.TierConfig) ([]ScoredResult, error) {
 	vecResults, err := s.vecStore.SearchWithFilter(memoryID, query, cfg.TopK*2, cfg.MinScore, nil)
 	if err != nil {
@@ -167,6 +173,7 @@ func (s *SimpleStrategy) searchItemsVector(memoryID memind.MemoryId, query strin
 	return results, nil
 }
 
+// searchItemsText - 对条目层执行 BM25 全文搜索
 func (s *SimpleStrategy) searchItemsText(memoryID memind.MemoryId, query string, cfg memind.TierConfig) ([]ScoredResult, error) {
 	textResults, err := s.textSearch.Search(memoryID, query, cfg.TopK*2, tsearch.TargetItem)
 	if err != nil {
@@ -186,6 +193,7 @@ func (s *SimpleStrategy) searchItemsText(memoryID memind.MemoryId, query string,
 	return results, nil
 }
 
+// searchRawData - 对原始数据层执行向量搜索
 func (s *SimpleStrategy) searchRawData(memoryID memind.MemoryId, query string, cfg memind.TierConfig) ([]ScoredResult, error) {
 	vecResults, err := s.vecStore.SearchWithFilter(memoryID, query, cfg.TopK*2, cfg.MinScore, map[string]any{"type": "rawdata"})
 	if err != nil {
@@ -205,11 +213,13 @@ func (s *SimpleStrategy) searchRawData(memoryID memind.MemoryId, query string, c
 	return results, nil
 }
 
+// TimeDecayFilter - 时间衰减过滤器，越久远的事件分数越低
 type TimeDecayFilter struct {
 	Rate  float64
 	Floor float64
 }
 
+// Apply - 对搜索结果应用时间衰减
 func (f TimeDecayFilter) Apply(results []ScoredResult) {
 	now := time.Now()
 	for i, r := range results {
@@ -227,6 +237,7 @@ func (f TimeDecayFilter) Apply(results []ScoredResult) {
 	})
 }
 
+// extractInsightID - 从元数据中提取洞察 ID
 func extractInsightID(metadata map[string]any) (int64, bool) {
 	if metadata == nil {
 		return 0, false
@@ -242,6 +253,7 @@ func extractInsightID(metadata map[string]any) (int64, bool) {
 	return 0, false
 }
 
+// admissionCheck - 搜索准入检查：空查询拒绝，超长查询截断
 func admissionCheck(query string) AdmissionResult {
 	trimmed := strings.TrimSpace(query)
 	if trimmed == "" {

@@ -1,61 +1,38 @@
 package prompt
 
 import (
-	"strings"
+	"bytes"
+	"text/template"
 )
 
-type PromptResult struct {
-	SystemPrompt string `json:"systemPrompt"`
-	UserPrompt   string `json:"userPrompt"`
-}
-
-func NewPromptResult(system, user string) PromptResult {
-	return PromptResult{SystemPrompt: system, UserPrompt: user}
-}
-
+// PromptTemplate - 基于 text/template 的提示词模板
 type PromptTemplate struct {
-	Name      string
-	Sections  map[string]string
-	Variables map[string]string
-	order     []string
+	tmpl *template.Template
 }
 
-func NewPromptTemplate(name string) *PromptTemplate {
-	return &PromptTemplate{
-		Name:      name,
-		Sections:  make(map[string]string),
-		Variables: make(map[string]string),
+// NewPromptTemplate - 从模板字符串创建提示词模板
+func NewPromptTemplate(tmplStr string) (*PromptTemplate, error) {
+	tmpl, err := template.New("prompt").Parse(tmplStr)
+	if err != nil {
+		return nil, err
 	}
+	return &PromptTemplate{tmpl: tmpl}, nil
 }
 
-func (t *PromptTemplate) Section(name, content string) *PromptTemplate {
-	t.Sections[name] = content
-	t.order = append(t.order, name)
-	return t
+// MustNewPromptTemplate - 带 panic 的创建函数（用于初始化）
+func MustNewPromptTemplate(tmplStr string) *PromptTemplate {
+	tmpl, err := NewPromptTemplate(tmplStr)
+	if err != nil {
+		panic(err)
+	}
+	return tmpl
 }
 
-func (t *PromptTemplate) Variable(key, value string) *PromptTemplate {
-	t.Variables[key] = value
-	return t
-}
-
-func (t *PromptTemplate) Render(language string) PromptResult {
-	var systemParts []string
-	for _, section := range t.order {
-		content := t.Sections[section]
-		for k, v := range t.Variables {
-			content = strings.ReplaceAll(content, "{{"+k+"}}", v)
-		}
-		systemParts = append(systemParts, content)
+// Execute - 执行模板并返回渲染结果
+func (p *PromptTemplate) Execute(data any) (string, error) {
+	var buf bytes.Buffer
+	if err := p.tmpl.Execute(&buf, data); err != nil {
+		return "", err
 	}
-	system := strings.Join(systemParts, "\n\n")
-	langRule := "Always respond in " + language + "."
-	if !strings.Contains(system, langRule) {
-		system = langRule + "\n\n" + system
-	}
-	userPrompt := ""
-	if up, ok := t.Variables["user_prompt"]; ok {
-		userPrompt = up
-	}
-	return PromptResult{SystemPrompt: system, UserPrompt: userPrompt}
+	return buf.String(), nil
 }

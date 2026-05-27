@@ -1,134 +1,117 @@
 package store
 
 import (
-	"fmt"
-	"math/rand"
 	"sync"
 	"time"
 
 	memind "github.com/openmemind/memind-go"
 )
 
-type InMemoryRawDataOps struct {
-	mu       sync.RWMutex
-	rawData  map[string]map[string]*memind.MemoryRawData
-	byContent map[string]map[string][]*memind.MemoryRawData
+// inMemRawDataOps - 内存版原始数据存储
+type inMemRawDataOps struct {
+	mu   sync.RWMutex
+	data map[memind.MemoryId]map[string]*memind.MemoryRawData
 }
 
-func NewInMemoryRawDataOps() *InMemoryRawDataOps {
-	return &InMemoryRawDataOps{
-		rawData:   make(map[string]map[string]*memind.MemoryRawData),
-		byContent: make(map[string]map[string][]*memind.MemoryRawData),
+func newInMemRawDataOps() *inMemRawDataOps {
+	return &inMemRawDataOps{
+		data: make(map[memind.MemoryId]map[string]*memind.MemoryRawData),
 	}
 }
 
-func (s *InMemoryRawDataOps) key(memID memind.MemoryId) string { return memID.Identifier() }
-
-func (s *InMemoryRawDataOps) UpsertRawData(memoryID memind.MemoryId, rawData []*memind.MemoryRawData) error {
+func (s *inMemRawDataOps) UpsertRawData(memoryID memind.MemoryId, rawData []*memind.MemoryRawData) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	k := s.key(memoryID)
-	if s.rawData[k] == nil {
-		s.rawData[k] = make(map[string]*memind.MemoryRawData)
-	}
-	if s.byContent[k] == nil {
-		s.byContent[k] = make(map[string][]*memind.MemoryRawData)
+	if s.data[memoryID] == nil {
+		s.data[memoryID] = make(map[string]*memind.MemoryRawData)
 	}
 	for _, rd := range rawData {
-		if rd.ID == "" {
-			rd.ID = fmt.Sprintf("rd-%d", rand.Int63())
-		}
-		if rd.CreatedAt.IsZero() {
-			rd.CreatedAt = time.Now()
-		}
-		s.rawData[k][rd.ID] = rd
-		if rd.ContentID != "" {
-			s.byContent[k][rd.ContentID] = append(s.byContent[k][rd.ContentID], rd)
-		}
+		s.data[memoryID][rd.ID] = rd
 	}
 	return nil
 }
 
-func (s *InMemoryRawDataOps) GetRawData(memoryID memind.MemoryId, rawDataID string) (*memind.MemoryRawData, error) {
+func (s *inMemRawDataOps) GetRawData(memoryID memind.MemoryId, rawDataID string) (*memind.MemoryRawData, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	k := s.key(memoryID)
-	if m, ok := s.rawData[k]; ok {
-		if rd, ok := m[rawDataID]; ok {
+	if s.data[memoryID] == nil {
+		return nil, nil
+	}
+	return s.data[memoryID][rawDataID], nil
+}
+
+func (s *inMemRawDataOps) GetRawDataByContentID(memoryID memind.MemoryId, contentID string) (*memind.MemoryRawData, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.data[memoryID] == nil {
+		return nil, nil
+	}
+	for _, rd := range s.data[memoryID] {
+		if rd.ContentID == contentID {
 			return rd, nil
-		}
-	}
-	return nil, memind.ErrRawDataNotFound
-}
-
-func (s *InMemoryRawDataOps) GetRawDataByContentID(memoryID memind.MemoryId, contentID string) (*memind.MemoryRawData, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	k := s.key(memoryID)
-	if m, ok := s.byContent[k]; ok {
-		if list, ok := m[contentID]; ok && len(list) > 0 {
-			return list[0], nil
-		}
-	}
-	return nil, memind.ErrRawDataNotFound
-}
-
-func (s *InMemoryRawDataOps) ListRawDataByContentID(memoryID memind.MemoryId, contentID string) ([]*memind.MemoryRawData, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	k := s.key(memoryID)
-	if m, ok := s.byContent[k]; ok {
-		if list, ok := m[contentID]; ok {
-			return list, nil
 		}
 	}
 	return nil, nil
 }
 
-func (s *InMemoryRawDataOps) ListRawData(memoryID memind.MemoryId) ([]*memind.MemoryRawData, error) {
+func (s *inMemRawDataOps) ListRawDataByContentID(memoryID memind.MemoryId, contentID string) ([]*memind.MemoryRawData, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	k := s.key(memoryID)
 	var result []*memind.MemoryRawData
-	if m, ok := s.rawData[k]; ok {
-		for _, rd := range m {
+	if s.data[memoryID] == nil {
+		return result, nil
+	}
+	for _, rd := range s.data[memoryID] {
+		if rd.ContentID == contentID {
 			result = append(result, rd)
 		}
 	}
 	return result, nil
 }
 
-func (s *InMemoryRawDataOps) PollRawDataWithoutVector(memoryID memind.MemoryId, limit int, minAge time.Duration) ([]*memind.MemoryRawData, error) {
+func (s *inMemRawDataOps) ListRawData(memoryID memind.MemoryId) ([]*memind.MemoryRawData, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	k := s.key(memoryID)
 	var result []*memind.MemoryRawData
+	if s.data[memoryID] == nil {
+		return result, nil
+	}
+	for _, rd := range s.data[memoryID] {
+		result = append(result, rd)
+	}
+	return result, nil
+}
+
+func (s *inMemRawDataOps) PollRawDataWithoutVector(memoryID memind.MemoryId, limit int, minAge time.Duration) ([]*memind.MemoryRawData, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var result []*memind.MemoryRawData
+	if s.data[memoryID] == nil {
+		return result, nil
+	}
 	cutoff := time.Now().Add(-minAge)
-	if m, ok := s.rawData[k]; ok {
-		for _, rd := range m {
-			if rd.CaptionVectorID == "" && rd.CreatedAt.Before(cutoff) {
-				result = append(result, rd)
-				if len(result) >= limit {
-					break
-				}
+	for _, rd := range s.data[memoryID] {
+		if rd.CaptionVectorID == "" && rd.CreatedAt.Before(cutoff) {
+			result = append(result, rd)
+			if limit > 0 && len(result) >= limit {
+				break
 			}
 		}
 	}
 	return result, nil
 }
 
-func (s *InMemoryRawDataOps) UpdateRawDataVectorIDs(memoryID memind.MemoryId, vectorIDs map[string]string, metadataPatch map[string]any) error {
+func (s *inMemRawDataOps) UpdateRawDataVectorIDs(memoryID memind.MemoryId, vectorIDs map[string]string, metadataPatch map[string]any) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	k := s.key(memoryID)
-	if m, ok := s.rawData[k]; ok {
-		for id, vecID := range vectorIDs {
-			if rd, ok := m[id]; ok {
-				rd.CaptionVectorID = vecID
+	for id, vectorID := range vectorIDs {
+		if rd, ok := s.data[memoryID][id]; ok {
+			rd.CaptionVectorID = vectorID
+			if metadataPatch != nil {
+				if rd.Metadata == nil {
+					rd.Metadata = make(map[string]any)
+				}
 				for k, v := range metadataPatch {
-					if rd.Metadata == nil {
-						rd.Metadata = make(map[string]any)
-					}
 					rd.Metadata[k] = v
 				}
 			}
@@ -137,154 +120,110 @@ func (s *InMemoryRawDataOps) UpdateRawDataVectorIDs(memoryID memind.MemoryId, ve
 	return nil
 }
 
-func (s *InMemoryRawDataOps) DeleteRawData(memoryID memind.MemoryId, rawDataID string) error {
+func (s *inMemRawDataOps) DeleteRawData(memoryID memind.MemoryId, rawDataID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	k := s.key(memoryID)
-	if m, ok := s.rawData[k]; ok {
-		if rd, ok := m[rawDataID]; ok {
-			delete(m, rawDataID)
-			if rd.ContentID != "" {
-				if cm, ok := s.byContent[k]; ok {
-					list := cm[rd.ContentID]
-					for i, item := range list {
-						if item.ID == rawDataID {
-							cm[rd.ContentID] = append(list[:i], list[i+1:]...)
-							break
-						}
-					}
-				}
-			}
-		}
+	if s.data[memoryID] != nil {
+		delete(s.data[memoryID], rawDataID)
 	}
 	return nil
 }
 
-type InMemoryItemOps struct {
+// inMemItemOps - 内存版记忆条目存储
+type inMemItemOps struct {
 	mu     sync.RWMutex
-	items  map[string]map[int64]*memind.MemoryItem
-	byHash map[string]map[string]*memind.MemoryItem
-	seq    map[string]int64
+	items  map[memind.MemoryId]map[int64]*memind.MemoryItem
+	nextID map[memind.MemoryId]int64
 }
 
-func NewInMemoryItemOps() *InMemoryItemOps {
-	return &InMemoryItemOps{
-		items:  make(map[string]map[int64]*memind.MemoryItem),
-		byHash: make(map[string]map[string]*memind.MemoryItem),
-		seq:    make(map[string]int64),
+func newInMemItemOps() *inMemItemOps {
+	return &inMemItemOps{
+		items:  make(map[memind.MemoryId]map[int64]*memind.MemoryItem),
+		nextID: make(map[memind.MemoryId]int64),
 	}
 }
 
-func (s *InMemoryItemOps) key(memID memind.MemoryId) string { return memID.Identifier() }
-
-func (s *InMemoryItemOps) UpsertItems(memoryID memind.MemoryId, items []*memind.MemoryItem) error {
+func (s *inMemItemOps) UpsertItems(memoryID memind.MemoryId, items []*memind.MemoryItem) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	k := s.key(memoryID)
-	if s.items[k] == nil {
-		s.items[k] = make(map[int64]*memind.MemoryItem)
-	}
-	if s.byHash[k] == nil {
-		s.byHash[k] = make(map[string]*memind.MemoryItem)
+	if s.items[memoryID] == nil {
+		s.items[memoryID] = make(map[int64]*memind.MemoryItem)
 	}
 	for _, item := range items {
 		if item.ID == 0 {
-			s.seq[k]++
-			item.ID = s.seq[k]
+			s.nextID[memoryID]++
+			item.ID = s.nextID[memoryID]
 		}
-		if item.CreatedAt.IsZero() {
-			item.CreatedAt = time.Now()
-		}
-		s.items[k][item.ID] = item
-		if item.ContentHash != "" {
-			s.byHash[k][item.ContentHash] = item
-		}
+		s.items[memoryID][item.ID] = item
 	}
 	return nil
 }
 
-func (s *InMemoryItemOps) GetItem(memoryID memind.MemoryId, itemID int64) (*memind.MemoryItem, error) {
+func (s *inMemItemOps) GetItem(memoryID memind.MemoryId, itemID int64) (*memind.MemoryItem, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	k := s.key(memoryID)
-	if m, ok := s.items[k]; ok {
-		if item, ok := m[itemID]; ok {
-			return item, nil
-		}
+	if s.items[memoryID] == nil {
+		return nil, nil
 	}
-	return nil, memind.ErrItemNotFound
+	return s.items[memoryID][itemID], nil
 }
 
-func (s *InMemoryItemOps) ListItems(memoryID memind.MemoryId) ([]*memind.MemoryItem, error) {
+func (s *inMemItemOps) ListItems(memoryID memind.MemoryId) ([]*memind.MemoryItem, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	k := s.key(memoryID)
 	var result []*memind.MemoryItem
-	if m, ok := s.items[k]; ok {
-		for _, item := range m {
-			result = append(result, item)
-		}
+	if s.items[memoryID] == nil {
+		return result, nil
+	}
+	for _, item := range s.items[memoryID] {
+		result = append(result, item)
 	}
 	return result, nil
 }
 
-func (s *InMemoryItemOps) DeleteItems(memoryID memind.MemoryId, itemIDs []int64) error {
+func (s *inMemItemOps) DeleteItems(memoryID memind.MemoryId, itemIDs []int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	k := s.key(memoryID)
-	if m, ok := s.items[k]; ok {
-		idSet := make(map[int64]bool)
-		for _, id := range itemIDs {
-			idSet[id] = true
-		}
-		for _, id := range itemIDs {
-			if item, ok := m[id]; ok {
-				delete(m, id)
-				if item.ContentHash != "" {
-					if hm, ok := s.byHash[k]; ok {
-						delete(hm, item.ContentHash)
-					}
-				}
-			}
-		}
+	if s.items[memoryID] == nil {
+		return nil
+	}
+	for _, id := range itemIDs {
+		delete(s.items[memoryID], id)
 	}
 	return nil
 }
 
-func (s *InMemoryItemOps) GetItemByHash(memoryID memind.MemoryId, hash string) (*memind.MemoryItem, error) {
+func (s *inMemItemOps) GetItemByHash(memoryID memind.MemoryId, hash string) (*memind.MemoryItem, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	k := s.key(memoryID)
-	if m, ok := s.byHash[k]; ok {
-		if item, ok := m[hash]; ok {
+	if s.items[memoryID] == nil {
+		return nil, nil
+	}
+	for _, item := range s.items[memoryID] {
+		if item.ContentHash == hash {
 			return item, nil
 		}
 	}
-	return nil, memind.ErrItemNotFound
+	return nil, nil
 }
 
-type InMemoryInsightOps struct {
-	mu          sync.RWMutex
-	insights    map[string]map[int64]*memind.MemoryInsight
-	types       map[string]*memind.MemoryInsightType
-	seq         map[string]int64
+// inMemInsightOps - 内存版洞察存储
+type inMemInsightOps struct {
+	mu       sync.RWMutex
+	types    map[string]*memind.MemoryInsightType
+	insights map[memind.MemoryId]map[int64]*memind.MemoryInsight
+	nextID   map[memind.MemoryId]int64
 }
 
-func NewInMemoryInsightOps() *InMemoryInsightOps {
-	ops := &InMemoryInsightOps{
-		insights: make(map[string]map[int64]*memind.MemoryInsight),
+func newInMemInsightOps() *inMemInsightOps {
+	return &inMemInsightOps{
 		types:    make(map[string]*memind.MemoryInsightType),
-		seq:      make(map[string]int64),
+		insights: make(map[memind.MemoryId]map[int64]*memind.MemoryInsight),
+		nextID:   make(map[memind.MemoryId]int64),
 	}
-	for _, t := range defaultInsightTypes() {
-		ops.types[t.Name] = t
-	}
-	return ops
 }
 
-func (s *InMemoryInsightOps) key(memID memind.MemoryId) string { return memID.Identifier() }
-
-func (s *InMemoryInsightOps) UpsertInsightTypes(types []*memind.MemoryInsightType) error {
+func (s *inMemInsightOps) UpsertInsightTypes(types []*memind.MemoryInsightType) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, t := range types {
@@ -293,16 +232,13 @@ func (s *InMemoryInsightOps) UpsertInsightTypes(types []*memind.MemoryInsightTyp
 	return nil
 }
 
-func (s *InMemoryInsightOps) GetInsightType(name string) (*memind.MemoryInsightType, error) {
+func (s *inMemInsightOps) GetInsightType(name string) (*memind.MemoryInsightType, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if t, ok := s.types[name]; ok {
-		return t, nil
-	}
-	return nil, fmt.Errorf("insight type not found: %s", name)
+	return s.types[name], nil
 }
 
-func (s *InMemoryInsightOps) ListInsightTypes() ([]*memind.MemoryInsightType, error) {
+func (s *inMemInsightOps) ListInsightTypes() ([]*memind.MemoryInsightType, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	var result []*memind.MemoryInsightType
@@ -312,164 +248,105 @@ func (s *InMemoryInsightOps) ListInsightTypes() ([]*memind.MemoryInsightType, er
 	return result, nil
 }
 
-func (s *InMemoryInsightOps) UpsertInsights(memoryID memind.MemoryId, insights []*memind.MemoryInsight) error {
+func (s *inMemInsightOps) UpsertInsights(memoryID memind.MemoryId, insights []*memind.MemoryInsight) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	k := s.key(memoryID)
-	if s.insights[k] == nil {
-		s.insights[k] = make(map[int64]*memind.MemoryInsight)
+	if s.insights[memoryID] == nil {
+		s.insights[memoryID] = make(map[int64]*memind.MemoryInsight)
 	}
 	for _, ins := range insights {
 		if ins.ID == 0 {
-			s.seq[k]++
-			ins.ID = s.seq[k]
+			s.nextID[memoryID]++
+			ins.ID = s.nextID[memoryID]
 		}
-		if ins.CreatedAt.IsZero() {
-			ins.CreatedAt = time.Now()
-		}
-		ins.UpdatedAt = time.Now()
-		s.insights[k][ins.ID] = ins
+		s.insights[memoryID][ins.ID] = ins
 	}
 	return nil
 }
 
-func (s *InMemoryInsightOps) GetInsight(memoryID memind.MemoryId, insightID int64) (*memind.MemoryInsight, error) {
+func (s *inMemInsightOps) GetInsight(memoryID memind.MemoryId, insightID int64) (*memind.MemoryInsight, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	k := s.key(memoryID)
-	if m, ok := s.insights[k]; ok {
-		if ins, ok := m[insightID]; ok {
-			return ins, nil
-		}
+	if s.insights[memoryID] == nil {
+		return nil, nil
 	}
-	return nil, memind.ErrInsightNotFound
+	return s.insights[memoryID][insightID], nil
 }
 
-func (s *InMemoryInsightOps) ListInsights(memoryID memind.MemoryId) ([]*memind.MemoryInsight, error) {
+func (s *inMemInsightOps) ListInsights(memoryID memind.MemoryId) ([]*memind.MemoryInsight, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	k := s.key(memoryID)
 	var result []*memind.MemoryInsight
-	if m, ok := s.insights[k]; ok {
-		for _, ins := range m {
+	if s.insights[memoryID] == nil {
+		return result, nil
+	}
+	for _, ins := range s.insights[memoryID] {
+		result = append(result, ins)
+	}
+	return result, nil
+}
+
+func (s *inMemInsightOps) GetInsightsByType(memoryID memind.MemoryId, insightType string) ([]*memind.MemoryInsight, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var result []*memind.MemoryInsight
+	if s.insights[memoryID] == nil {
+		return result, nil
+	}
+	for _, ins := range s.insights[memoryID] {
+		if string(ins.Type) == insightType {
 			result = append(result, ins)
 		}
 	}
 	return result, nil
 }
 
-func (s *InMemoryInsightOps) GetInsightsByType(memoryID memind.MemoryId, insightType string) ([]*memind.MemoryInsight, error) {
+func (s *inMemInsightOps) GetInsightsByTier(memoryID memind.MemoryId, tier memind.InsightTier) ([]*memind.MemoryInsight, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	k := s.key(memoryID)
 	var result []*memind.MemoryInsight
-	if m, ok := s.insights[k]; ok {
-		for _, ins := range m {
-			if ins.Type == insightType {
-				result = append(result, ins)
-			}
+	if s.insights[memoryID] == nil {
+		return result, nil
+	}
+	for _, ins := range s.insights[memoryID] {
+		if ins.Tier == tier {
+			result = append(result, ins)
 		}
 	}
 	return result, nil
 }
 
-func (s *InMemoryInsightOps) GetInsightsByTier(memoryID memind.MemoryId, tier memind.InsightTier) ([]*memind.MemoryInsight, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	k := s.key(memoryID)
-	var result []*memind.MemoryInsight
-	if m, ok := s.insights[k]; ok {
-		for _, ins := range m {
-			if ins.Tier == tier {
-				result = append(result, ins)
-			}
-		}
-	}
-	return result, nil
-}
-
-func (s *InMemoryInsightOps) DeleteInsights(memoryID memind.MemoryId, insightIDs []int64) error {
+func (s *inMemInsightOps) DeleteInsights(memoryID memind.MemoryId, insightIDs []int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	k := s.key(memoryID)
-	if m, ok := s.insights[k]; ok {
-		for _, id := range insightIDs {
-			delete(m, id)
-		}
+	if s.insights[memoryID] == nil {
+		return nil
+	}
+	for _, id := range insightIDs {
+		delete(s.insights[memoryID], id)
 	}
 	return nil
 }
 
+// InMemoryStore - 内存版 MemoryStore 实现，所有数据存储在 map 中
 type InMemoryStore struct {
-	RawDataOps  *InMemoryRawDataOps
-	ItemOps     *InMemoryItemOps
-	InsightOps  *InMemoryInsightOps
+	rawDataOps *inMemRawDataOps
+	itemOps    *inMemItemOps
+	insightOps *inMemInsightOps
 }
 
+// NewInMemoryStore - 创建内存版存储
 func NewInMemoryStore() *InMemoryStore {
 	return &InMemoryStore{
-		RawDataOps:  NewInMemoryRawDataOps(),
-		ItemOps:     NewInMemoryItemOps(),
-		InsightOps:  NewInMemoryInsightOps(),
+		rawDataOps: newInMemRawDataOps(),
+		itemOps:    newInMemItemOps(),
+		insightOps: newInMemInsightOps(),
 	}
 }
 
-func (s *InMemoryStore) RawData() RawDataOperations   { return s.RawDataOps }
-func (s *InMemoryStore) Items() ItemOperations         { return s.ItemOps }
-func (s *InMemoryStore) Insights() InsightOperations   { return s.InsightOps }
+func (s *InMemoryStore) RawData() RawDataOperations  { return s.rawDataOps }
+func (s *InMemoryStore) Items() ItemOperations       { return s.itemOps }
+func (s *InMemoryStore) Insights() InsightOperations { return s.insightOps }
 
-func defaultInsightTypes() []*memind.MemoryInsightType {
-	now := time.Now()
-	return []*memind.MemoryInsightType{
-		{
-			ID: 1, Name: "identity", Scope: memind.ScopeUser,
-			Categories: []string{"PROFILE"}, TargetTokens: 300,
-			LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now,
-		},
-		{
-			ID: 2, Name: "preferences", Scope: memind.ScopeUser,
-			Categories: []string{"BEHAVIOR"}, TargetTokens: 300,
-			LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now,
-		},
-		{
-			ID: 3, Name: "relationships", Scope: memind.ScopeUser,
-			Categories: []string{"BEHAVIOR", "EVENT"}, TargetTokens: 300,
-			LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now,
-		},
-		{
-			ID: 4, Name: "experiences", Scope: memind.ScopeUser,
-			Categories: []string{"EVENT"}, TargetTokens: 400,
-			LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now,
-		},
-		{
-			ID: 5, Name: "behavior", Scope: memind.ScopeUser,
-			Categories: []string{"BEHAVIOR"}, TargetTokens: 300,
-			LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now,
-		},
-		{
-			ID: 6, Name: "directives", Scope: memind.ScopeAgent,
-			Categories: []string{"DIRECTIVE"}, TargetTokens: 400,
-			LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now,
-		},
-		{
-			ID: 7, Name: "playbooks", Scope: memind.ScopeAgent,
-			Categories: []string{"PLAYBOOK"}, TargetTokens: 500,
-			LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now,
-		},
-		{
-			ID: 8, Name: "resolutions", Scope: memind.ScopeAgent,
-			Categories: []string{"RESOLUTION"}, TargetTokens: 400,
-			LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now,
-		},
-		{
-			ID: 9, Name: "profile", Scope: memind.ScopeUser,
-			Categories: []string{"PROFILE", "BEHAVIOR", "EVENT"}, TargetTokens: 800,
-			LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now,
-		},
-		{
-			ID: 10, Name: "interaction", Scope: memind.ScopeAgent,
-			Categories: []string{"TOOL", "DIRECTIVE", "PLAYBOOK", "RESOLUTION"}, TargetTokens: 800,
-			LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now,
-		},
-	}
-}
+// compile-time interface check
+var _ MemoryStore = (*InMemoryStore)(nil)
