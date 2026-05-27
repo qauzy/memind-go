@@ -1,0 +1,199 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 900" font-family="'SF Mono','Menlo','Monaco','Consolas',monospace">
+  <defs>
+    <linearGradient id="headerGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#6366f1;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#8b5cf6;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="engineGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0891b2;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#06b6d4;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="pipelineGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#059669;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#10b981;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="storeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#d97706;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#f59e0b;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="optionalGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#7c3aed;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#a855f7;stop-opacity:1" />
+    </linearGradient>
+    <filter id="shadow" x="-2%" y="-2%" width="104%" height="108%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.12"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#94a3b8"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="800" height="900" rx="12" fill="#f8fafc"/>
+
+  <!-- Title -->
+  <text x="400" y="38" text-anchor="middle" font-size="20" font-weight="bold" fill="#1e293b">memind-go Architecture</text>
+  <text x="400" y="58" text-anchor="middle" font-size="12" fill="#64748b">Hierarchical Cognitive Memory Engine for AI Agents</text>
+
+  <!-- ========== Layer 1: Entry Points ========== -->
+  <rect x="40" y="80" width="720" height="40" rx="6" fill="#e2e8f0"/>
+  <text x="400" y="105" text-anchor="middle" font-size="12" font-weight="bold" fill="#475569">ENTRY POINTS</text>
+
+  <rect x="60" y="86" width="200" height="28" rx="14" fill="url(#headerGrad)" filter="url(#shadow)"/>
+  <text x="160" y="105" text-anchor="middle" font-size="11" fill="#fff" font-weight="bold">cmd/memind/ (CLI)</text>
+
+  <rect x="300" y="86" width="200" height="28" rx="14" fill="url(#headerGrad)" filter="url(#shadow)"/>
+  <text x="400" y="105" text-anchor="middle" font-size="11" fill="#fff" font-weight="bold">server/ (HTTP API)</text>
+
+  <rect x="540" y="86" width="200" height="28" rx="14" fill="url(#headerGrad)" filter="url(#shadow)"/>
+  <text x="640" y="105" text-anchor="middle" font-size="11" fill="#fff" font-weight="bold">Library Import (Go)</text>
+
+  <!-- Arrow down -->
+  <line x1="400" y1="120" x2="400" y2="150" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ========== Layer 2: Engine Core ========== -->
+  <rect x="40" y="155" width="720" height="40" rx="6" fill="#e2e8f0"/>
+  <text x="400" y="180" text-anchor="middle" font-size="12" font-weight="bold" fill="#475569">ENGINE CORE</text>
+
+  <rect x="160" y="160" width="480" height="30" rx="8" fill="url(#engineGrad)" filter="url(#shadow)"/>
+  <text x="400" y="180" text-anchor="middle" font-size="12" fill="#fff" font-weight="bold">engine/ — MemoryBuilder → Memory (interface)</text>
+
+  <!-- Sub labels under engine -->
+  <text x="220" y="208" text-anchor="middle" font-size="10" fill="#64748b">DI wiring</text>
+  <text x="400" y="208" text-anchor="middle" font-size="10" fill="#64748b">Default in-memory components</text>
+  <text x="580" y="208" text-anchor="middle" font-size="10" fill="#64748b">Pluggable via Builder methods</text>
+
+  <!-- Arrow down -->
+  <line x1="400" y1="215" x2="400" y2="240" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ========== Layer 3: Pipelines ========== -->
+  <rect x="40" y="245" width="720" height="40" rx="6" fill="#e2e8f0"/>
+  <text x="400" y="270" text-anchor="middle" font-size="12" font-weight="bold" fill="#475569">PIPELINES</text>
+
+  <!-- Extraction -->
+  <rect x="60" y="255" width="210" height="24" rx="12" fill="url(#pipelineGrad)" filter="url(#shadow)"/>
+  <text x="165" y="272" text-anchor="middle" font-size="10" fill="#fff" font-weight="bold">extraction/</text>
+
+  <!-- Retrieval -->
+  <rect x="295" y="255" width="210" height="24" rx="12" fill="url(#pipelineGrad)" filter="url(#shadow)"/>
+  <text x="400" y="272" text-anchor="middle" font-size="10" fill="#fff" font-weight="bold">retrieval/</text>
+
+  <!-- Insight -->
+  <rect x="530" y="255" width="210" height="24" rx="12" fill="url(#pipelineGrad)" filter="url(#shadow)"/>
+  <text x="635" y="272" text-anchor="middle" font-size="10" fill="#fff" font-weight="bold">insight/</text>
+
+  <!-- Sub details -->
+  <text x="165" y="300" text-anchor="middle" font-size="9" fill="#64748b">RawContent → RawData</text>
+  <text x="165" y="313" text-anchor="middle" font-size="9" fill="#64748b">→ MemoryItem → Insight</text>
+
+  <text x="400" y="300" text-anchor="middle" font-size="9" fill="#64748b">Simple: Vec + BM25 + RRF</text>
+  <text x="400" y="313" text-anchor="middle" font-size="9" fill="#64748b">Deep: + LLM rerank</text>
+
+  <text x="635" y="300" text-anchor="middle" font-size="9" fill="#64748b">TreeBuilder</text>
+  <text x="635" y="313" text-anchor="middle" font-size="9" fill="#64748b">Leaf → Branch → Root</text>
+
+  <!-- Arrow down -->
+  <line x1="165" y1="320" x2="165" y2="380" stroke="#94a3b8" stroke-width="1" stroke-dasharray="4,3"/>
+  <line x1="400" y1="320" x2="400" y2="380" stroke="#94a3b8" stroke-width="1" stroke-dasharray="4,3"/>
+  <line x1="635" y1="320" x2="635" y2="380" stroke="#94a3b8" stroke-width="1" stroke-dasharray="4,3"/>
+
+  <!-- ========== Layer 4: Buffer ========== -->
+  <rect x="40" y="330" width="720" height="40" rx="6" fill="#e2e8f0"/>
+  <text x="400" y="355" text-anchor="middle" font-size="12" font-weight="bold" fill="#475569">BUFFER</text>
+
+  <rect x="100" y="340" width="170" height="22" rx="11" fill="#f59e0b" filter="url(#shadow)"/>
+  <text x="185" y="355" text-anchor="middle" font-size="9" fill="#fff" font-weight="bold">PendingConversation</text>
+
+  <rect x="315" y="340" width="170" height="22" rx="11" fill="#f59e0b" filter="url(#shadow)"/>
+  <text x="400" y="355" text-anchor="middle" font-size="9" fill="#fff" font-weight="bold">RecentConversation</text>
+
+  <rect x="530" y="340" width="170" height="22" rx="11" fill="#f59e0b" filter="url(#shadow)"/>
+  <text x="615" y="355" text-anchor="middle" font-size="9" fill="#fff" font-weight="bold">InsightBuffer</text>
+
+  <!-- Lines from buffer to pipeline -->
+  <line x1="165" y1="362" x2="165" y2="380" stroke="#94a3b8" stroke-width="1"/>
+  <line x1="400" y1="362" x2="400" y2="380" stroke="#94a3b8" stroke-width="1"/>
+
+  <!-- ========== Layer 5: Storage ========== -->
+  <rect x="40" y="385" width="720" height="40" rx="6" fill="#e2e8f0"/>
+  <text x="400" y="410" text-anchor="middle" font-size="12" font-weight="bold" fill="#475569">STORAGE LAYER (In-Memory by default)</text>
+
+  <rect x="60" y="395" width="150" height="22" rx="11" fill="url(#storeGrad)" filter="url(#shadow)"/>
+  <text x="135" y="410" text-anchor="middle" font-size="9" fill="#fff" font-weight="bold">store/ (MemoryStore)</text>
+
+  <rect x="235" y="395" width="150" height="22" rx="11" fill="url(#storeGrad)" filter="url(#shadow)"/>
+  <text x="310" y="410" text-anchor="middle" font-size="9" fill="#fff" font-weight="bold">vector/ (MemoryVector)</text>
+
+  <rect x="410" y="395" width="150" height="22" rx="11" fill="url(#storeGrad)" filter="url(#shadow)"/>
+  <text x="485" y="410" text-anchor="middle" font-size="9" fill="#fff" font-weight="bold">textsearch/ (BM25)</text>
+
+  <rect x="585" y="395" width="155" height="22" rx="11" fill="url(#storeGrad)" filter="url(#shadow)"/>
+  <text x="662" y="410" text-anchor="middle" font-size="9" fill="#fff" font-weight="bold">buffer/ (MemoryBuffer)</text>
+
+  <text x="135" y="438" text-anchor="middle" font-size="9" fill="#64748b">RawData / Item / Insight</text>
+  <text x="310" y="438" text-anchor="middle" font-size="9" fill="#64748b">Hash-embedding 128-dim</text>
+  <text x="485" y="438" text-anchor="middle" font-size="9" fill="#64748b">Full-text BM25</text>
+  <text x="662" y="438" text-anchor="middle" font-size="9" fill="#64748b">Pending / Recent / Insight</text>
+
+  <!-- Arrow down -->
+  <line x1="400" y1="445" x2="400" y2="470" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ========== Layer 6: Cross-cutting ========== -->
+  <rect x="40" y="475" width="720" height="40" rx="6" fill="#e2e8f0"/>
+  <text x="400" y="500" text-anchor="middle" font-size="12" font-weight="bold" fill="#475569">CROSS-CUTTING</text>
+
+  <rect x="80" y="485" width="180" height="22" rx="11" fill="#ec4899" filter="url(#shadow)"/>
+  <text x="170" y="500" text-anchor="middle" font-size="9" fill="#fff" font-weight="bold">config/ — MemoryBuildOptions</text>
+
+  <rect x="290" y="485" width="180" height="22" rx="11" fill="#ec4899" filter="url(#shadow)"/>
+  <text x="380" y="500" text-anchor="middle" font-size="9" fill="#fff" font-weight="bold">errors/ — Error types</text>
+
+  <rect x="500" y="485" width="220" height="22" rx="11" fill="#ec4899" filter="url(#shadow)"/>
+  <text x="610" y="500" text-anchor="middle" font-size="9" fill="#fff" font-weight="bold">tracing/ — MemoryObserver</text>
+
+  <!-- ========== Layer 7: Optional LLM ========== -->
+  <rect x="40" y="535" width="720" height="40" rx="6" fill="#e2e8f0"/>
+  <text x="400" y="560" text-anchor="middle" font-size="12" font-weight="bold" fill="#475569">OPTIONAL LLM LAYER (NoOp default)</text>
+
+  <rect x="100" y="545" width="250" height="22" rx="11" fill="url(#optionalGrad)" filter="url(#shadow)"/>
+  <text x="225" y="560" text-anchor="middle" font-size="9" fill="#fff" font-weight="bold">llm/ — StructuredChatClient</text>
+
+  <rect x="400" y="545" width="250" height="22" rx="11" fill="url(#optionalGrad)" filter="url(#shadow)"/>
+  <text x="525" y="560" text-anchor="middle" font-size="9" fill="#fff" font-weight="bold">prompt/ — PromptTemplate</text>
+
+  <!-- Dashed lines from LLM to pipelines -->
+  <line x1="225" y1="567" x2="165" y2="595" stroke="#a855f7" stroke-width="1" stroke-dasharray="5,3"/>
+  <line x1="225" y1="567" x2="400" y2="595" stroke="#a855f7" stroke-width="1" stroke-dasharray="5,3"/>
+  <line x1="525" y1="567" x2="635" y2="595" stroke="#a855f7" stroke-width="1" stroke-dasharray="5,3"/>
+
+  <!-- ========== Legend ========== -->
+  <rect x="40" y="600" width="720" height="75" rx="6" fill="#f1f5f9"/>
+  <text x="400" y="618" text-anchor="middle" font-size="11" font-weight="bold" fill="#475569">Legend</text>
+
+  <rect x="60" y="630" width="12" height="12" rx="2" fill="url(#headerGrad)"/>
+  <text x="80" y="641" font-size="10" fill="#64748b">Entry</text>
+
+  <rect x="140" y="630" width="12" height="12" rx="2" fill="url(#engineGrad)"/>
+  <text x="160" y="641" font-size="10" fill="#64748b">Engine</text>
+
+  <rect x="220" y="630" width="12" height="12" rx="2" fill="url(#pipelineGrad)"/>
+  <text x="240" y="641" font-size="10" fill="#64748b">Pipeline</text>
+
+  <rect x="310" y="630" width="12" height="12" rx="2" fill="#f59e0b"/>
+  <text x="330" y="641" font-size="10" fill="#64748b">Buffer</text>
+
+  <rect x="390" y="630" width="12" height="12" rx="2" fill="url(#storeGrad)"/>
+  <text x="410" y="641" font-size="10" fill="#64748b">Storage</text>
+
+  <rect x="480" y="630" width="12" height="12" rx="2" fill="#ec4899"/>
+  <text x="500" y="641" font-size="10" fill="#64748b">Cross-cutting</text>
+
+  <rect x="590" y="630" width="12" height="12" rx="2" fill="url(#optionalGrad)"/>
+  <text x="610" y="641" font-size="10" fill="#64748b">Optional (LLM)</text>
+
+  <line x1="690" y1="636" x2="730" y2="636" stroke="#a855f7" stroke-width="1.5" stroke-dasharray="5,3"/>
+  <text x="690" y="653" font-size="9" fill="#a855f7">LLM-optional path</text>
+
+  <line x1="690" y1="663" x2="730" y2="663" stroke="#94a3b8" stroke-width="1.5"/>
+  <text x="690" y="673" font-size="9" fill="#94a3b8">Data flow</text>
+</svg>
