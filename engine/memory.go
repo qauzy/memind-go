@@ -18,14 +18,15 @@ import (
 
 // memoryImpl - Memory 接口的默认实现，组合所有子模块
 type memoryImpl struct {
-	memStore   store.MemoryStore
-	extractor  *extraction.DefaultExtractor
-	retriever  *retrieval.DefaultRetriever
-	buf        *buffer.InMemoryBuffer
-	vecStore   vector.MemoryVector
-	textSearch tsearch.MemoryTextSearch
-	llm        *llm.ChatClientRegistry
-	options    memind.MemoryBuildOptions
+	memStore    store.MemoryStore
+	extractor   *extraction.DefaultExtractor
+	retriever   *retrieval.DefaultRetriever
+	buf         *buffer.InMemoryBuffer
+	vecStore    vector.MemoryVector
+	textSearch  tsearch.MemoryTextSearch
+	llm         *llm.ChatClientRegistry
+	treeBuilder *insight.TreeBuilder
+	options     memind.MemoryBuildOptions
 }
 
 // newMemory - 创建 memoryImpl 实例（包内私有）
@@ -37,21 +38,23 @@ func newMemory(
 	vec vector.MemoryVector,
 	ts tsearch.MemoryTextSearch,
 	llm *llm.ChatClientRegistry,
+	treeBuilder *insight.TreeBuilder,
 	opts memind.MemoryBuildOptions,
 ) *memoryImpl {
 	return &memoryImpl{
-		memStore:   memStore,
-		extractor:  extractor,
-		retriever:  retriever,
-		buf:        buf,
-		vecStore:   vec,
-		textSearch: ts,
-		llm:        llm,
-		options:    opts,
+		memStore:    memStore,
+		extractor:   extractor,
+		retriever:   retriever,
+		buf:         buf,
+		vecStore:    vec,
+		textSearch:  ts,
+		llm:         llm,
+		treeBuilder: treeBuilder,
+		options:     opts,
 	}
 }
 
-// Extract - 直接提取记忆：原始内容 → 原始数据 → 条目 → 洞察
+// Extract - 直接提取记忆：原始内容 → 原始数据 → 条目 → 洞察 → 树晋升
 func (m *memoryImpl) Extract(req memind.ExtractionRequest) (*memind.ExtractionResult, error) {
 	if req.Config == (memind.ExtractionConfig{}) {
 		req.Config = memind.DefaultExtractionConfig()
@@ -59,7 +62,18 @@ func (m *memoryImpl) Extract(req memind.ExtractionRequest) (*memind.ExtractionRe
 	if req.Config.Timeout == 0 {
 		req.Config.Timeout = 10 * time.Minute
 	}
-	return m.extractor.Extract(req)
+
+	result, err := m.extractor.Extract(req)
+	if err != nil {
+		return nil, err
+	}
+
+	// 提取完成后执行洞察树晋升（仅在有新洞察生成时）
+	if len(result.Insights.Insights) > 0 && m.treeBuilder != nil {
+		_ = m.treeBuilder.Promote(req.MemoryID)
+	}
+
+	return result, nil
 }
 
 // AddMessages - 批量添加消息到缓冲区
@@ -281,10 +295,8 @@ func (b *MemoryBuilder) Build() memind.Memory {
 		b.options.Retrieval,
 	)
 
-	mem := newMemory(b.memStore, ext, ret, b.buf, b.vecStore, b.textSearch, b.llmReg, b.options)
-
 	cfg := memind.DefaultInsightTreeConfig()
-	_ = insight.NewTreeBuilder(b.memStore, insight.Config{
+	treeBuilder := insight.NewTreeBuilder(b.memStore, insight.Config{
 		LeafLevel: insight.TierConfig{
 			MaxChildren: cfg.BranchBubbleThreshold,
 		},
@@ -292,6 +304,9 @@ func (b *MemoryBuilder) Build() memind.Memory {
 			MaxChildren: cfg.RootBubbleThreshold,
 		},
 	})
+	treeBuilder.SetLLM(b.llmReg)
+
+	mem := newMemory(b.memStore, ext, ret, b.buf, b.vecStore, b.textSearch, b.llmReg, treeBuilder, b.options)
 
 	return mem
 }

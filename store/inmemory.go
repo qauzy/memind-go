@@ -216,10 +216,30 @@ type inMemInsightOps struct {
 }
 
 func newInMemInsightOps() *inMemInsightOps {
-	return &inMemInsightOps{
+	ops := &inMemInsightOps{
 		types:    make(map[string]*memind.MemoryInsightType),
 		insights: make(map[memind.MemoryId]map[int64]*memind.MemoryInsight),
 		nextID:   make(map[memind.MemoryId]int64),
+	}
+	// 插入默认洞察类型（与 SQL 存储保持一致）
+	ops.UpsertInsightTypes(defaultInsightTypes())
+	return ops
+}
+
+// defaultInsightTypes - 返回默认洞察类型列表
+func defaultInsightTypes() []*memind.MemoryInsightType {
+	now := time.Now()
+	return []*memind.MemoryInsightType{
+		{Name: "identity", Scope: memind.ScopeUser, Categories: []string{"PROFILE"}, TargetTokens: 300, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+		{Name: "preferences", Scope: memind.ScopeUser, Categories: []string{"BEHAVIOR"}, TargetTokens: 300, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+		{Name: "relationships", Scope: memind.ScopeUser, Categories: []string{"BEHAVIOR", "EVENT"}, TargetTokens: 300, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+		{Name: "experiences", Scope: memind.ScopeUser, Categories: []string{"EVENT"}, TargetTokens: 400, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+		{Name: "behavior", Scope: memind.ScopeUser, Categories: []string{"BEHAVIOR"}, TargetTokens: 300, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+		{Name: "directives", Scope: memind.ScopeAgent, Categories: []string{"DIRECTIVE"}, TargetTokens: 400, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+		{Name: "playbooks", Scope: memind.ScopeAgent, Categories: []string{"PLAYBOOK"}, TargetTokens: 500, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+		{Name: "resolutions", Scope: memind.ScopeAgent, Categories: []string{"RESOLUTION"}, TargetTokens: 400, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+		{Name: "profile", Scope: memind.ScopeUser, Categories: []string{"PROFILE", "BEHAVIOR", "EVENT"}, TargetTokens: 800, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+		{Name: "interaction", Scope: memind.ScopeAgent, Categories: []string{"TOOL", "DIRECTIVE", "PLAYBOOK", "RESOLUTION"}, TargetTokens: 800, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
 	}
 }
 

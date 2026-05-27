@@ -38,6 +38,15 @@ func TestExtractAndRetrieve(t *testing.T) {
 	if len(result.Items.NewItems) == 0 {
 		t.Fatal("expected at least one memory item")
 	}
+	if len(result.Insights.Insights) == 0 {
+		t.Fatal("expected at least one insight (fallback from NoOp LLM)")
+	}
+	if result.Insights.Insights[0].Tier != memind.TierLeaf {
+		t.Fatalf("expected LEAF tier, got %s", result.Insights.Insights[0].Tier)
+	}
+	if len(result.Insights.Insights[0].Points) == 0 {
+		t.Fatal("expected insight to have points")
+	}
 
 	retResult, err := mem.Retrieve(memind.RetrievalRequest{
 		MemoryID: memID,
