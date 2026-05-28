@@ -53,6 +53,8 @@ type InsightStore interface {
 	ListInsights(memoryID MemoryId) ([]*MemoryInsight, error)
 	GetInsightsByType(memoryID MemoryId, insightType string) ([]*MemoryInsight, error)
 	GetInsightsByTier(memoryID MemoryId, tier InsightTier) ([]*MemoryInsight, error)
+	GetBranchByType(memoryID MemoryId, typeName string) (*MemoryInsight, error)
+	GetRootByType(memoryID MemoryId, rootTypeName string) (*MemoryInsight, error)
 	DeleteInsights(memoryID MemoryId, insightIDs []int64) error
 }
 

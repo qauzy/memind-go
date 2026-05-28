@@ -121,6 +121,7 @@ func (d dialect) createTableSQL() []string {
 			description_vector_id TEXT,
 			categories TEXT,
 			target_tokens INTEGER NOT NULL DEFAULT 300,
+			analysis_mode TEXT NOT NULL DEFAULT 'BRANCH',
 			last_updated_at %s,
 			created_at %s NOT NULL,
 			updated_at %s NOT NULL,

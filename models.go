@@ -66,6 +66,14 @@ const (
 	TierRoot   InsightTier = "ROOT"
 )
 
+// InsightAnalysisMode - 洞察类型分析模式
+type InsightAnalysisMode string
+
+const (
+	AnalysisModeBranch InsightAnalysisMode = "BRANCH"
+	AnalysisModeRoot   InsightAnalysisMode = "ROOT"
+)
+
 // PointType - 洞察点类型
 type PointType string
 
@@ -259,18 +267,39 @@ type MemoryRawData struct {
 	EndTime         *time.Time     `json:"endTime,omitempty"`
 }
 
+// InsightPointOp - 洞察点操作指令
+type InsightPointOp struct {
+	Op            OpType            `json:"op"`
+	PointID       string            `json:"pointId"`
+	Type          *PointType        `json:"type,omitempty"`
+	Content       string            `json:"content,omitempty"`
+	SourceItemIDs []string          `json:"sourceItemIds,omitempty"`
+	Metadata      map[string]string `json:"metadata,omitempty"`
+}
+
+// InsightPointOpsResponse - LLM 返回的 Point 操作列表
+type InsightPointOpsResponse struct {
+	Operations []InsightPointOp `json:"operations"`
+}
+
+// InsightPointGenerateResponse - LLM 返回的全量 Point 列表
+type InsightPointGenerateResponse struct {
+	Points []InsightPoint `json:"points"`
+}
+
 // MemoryInsightType - 洞察类型的元定义
 type MemoryInsightType struct {
-	ID                  int64       `json:"id"`
-	Name                string      `json:"name"`
-	Description         string      `json:"description"`
-	DescriptionVectorID string      `json:"descriptionVectorId,omitempty"`
-	Categories          []string    `json:"categories"`
-	TargetTokens        int         `json:"targetTokens"`
-	LastUpdatedAt       time.Time   `json:"lastUpdatedAt"`
-	CreatedAt           time.Time   `json:"createdAt"`
-	UpdatedAt           time.Time   `json:"updatedAt"`
-	Scope               MemoryScope `json:"scope"`
+	ID                  int64               `json:"id"`
+	Name                string              `json:"name"`
+	Description         string              `json:"description"`
+	DescriptionVectorID string              `json:"descriptionVectorId,omitempty"`
+	Categories          []string            `json:"categories"`
+	TargetTokens        int                 `json:"targetTokens"`
+	AnalysisMode        InsightAnalysisMode `json:"analysisMode"`
+	LastUpdatedAt       time.Time           `json:"lastUpdatedAt"`
+	CreatedAt           time.Time           `json:"createdAt"`
+	UpdatedAt           time.Time           `json:"updatedAt"`
+	Scope               MemoryScope         `json:"scope"`
 }
 
 // MemoryResource - 外部资源文件记录
@@ -353,7 +382,8 @@ type MemoryItemResult struct {
 
 // InsightResult - 洞察提取结果
 type InsightResult struct {
-	Insights []*MemoryInsight `json:"insights"`
+	Insights []*MemoryInsight            `json:"insights"`
+	ByType   map[string][]*MemoryInsight `json:"-"`
 }
 
 // RetrievedItem - 检索返回的单条记忆条目

@@ -229,18 +229,24 @@ func newInMemInsightOps() *inMemInsightOps {
 // defaultInsightTypes - 返回默认洞察类型列表
 func defaultInsightTypes() []*memind.MemoryInsightType {
 	now := time.Now()
-	return []*memind.MemoryInsightType{
-		{Name: "identity", Scope: memind.ScopeUser, Categories: []string{"PROFILE"}, TargetTokens: 300, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
-		{Name: "preferences", Scope: memind.ScopeUser, Categories: []string{"BEHAVIOR"}, TargetTokens: 300, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
-		{Name: "relationships", Scope: memind.ScopeUser, Categories: []string{"BEHAVIOR", "EVENT"}, TargetTokens: 300, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
-		{Name: "experiences", Scope: memind.ScopeUser, Categories: []string{"EVENT"}, TargetTokens: 400, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
-		{Name: "behavior", Scope: memind.ScopeUser, Categories: []string{"BEHAVIOR"}, TargetTokens: 300, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
-		{Name: "directives", Scope: memind.ScopeAgent, Categories: []string{"DIRECTIVE"}, TargetTokens: 400, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
-		{Name: "playbooks", Scope: memind.ScopeAgent, Categories: []string{"PLAYBOOK"}, TargetTokens: 500, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
-		{Name: "resolutions", Scope: memind.ScopeAgent, Categories: []string{"RESOLUTION"}, TargetTokens: 400, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
-		{Name: "profile", Scope: memind.ScopeUser, Categories: []string{"PROFILE", "BEHAVIOR", "EVENT"}, TargetTokens: 800, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
-		{Name: "interaction", Scope: memind.ScopeAgent, Categories: []string{"TOOL", "DIRECTIVE", "PLAYBOOK", "RESOLUTION"}, TargetTokens: 800, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+	types := []*memind.MemoryInsightType{
+		{Name: "identity", Scope: memind.ScopeUser, Categories: []string{"PROFILE"}, TargetTokens: 300, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+		{Name: "preferences", Scope: memind.ScopeUser, Categories: []string{"BEHAVIOR"}, TargetTokens: 300, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+		{Name: "relationships", Scope: memind.ScopeUser, Categories: []string{"BEHAVIOR", "EVENT"}, TargetTokens: 300, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+		{Name: "experiences", Scope: memind.ScopeUser, Categories: []string{"EVENT"}, TargetTokens: 400, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+		{Name: "behavior", Scope: memind.ScopeUser, Categories: []string{"BEHAVIOR"}, TargetTokens: 300, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+		{Name: "directives", Scope: memind.ScopeAgent, Categories: []string{"DIRECTIVE"}, TargetTokens: 400, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+		{Name: "playbooks", Scope: memind.ScopeAgent, Categories: []string{"PLAYBOOK"}, TargetTokens: 500, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+		{Name: "resolutions", Scope: memind.ScopeAgent, Categories: []string{"RESOLUTION"}, TargetTokens: 400, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+		{Name: "profile", Scope: memind.ScopeUser, Categories: []string{"PROFILE", "BEHAVIOR", "EVENT"}, TargetTokens: 800, AnalysisMode: memind.AnalysisModeRoot, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+		{Name: "interaction", Scope: memind.ScopeAgent, Categories: []string{"TOOL", "DIRECTIVE", "PLAYBOOK", "RESOLUTION"}, TargetTokens: 800, AnalysisMode: memind.AnalysisModeRoot, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
 	}
+	for _, t := range types {
+		if t.ID == 0 {
+			t.ID = int64(1 + len(types))
+		}
+	}
+	return types
 }
 
 func (s *inMemInsightOps) UpsertInsightTypes(types []*memind.MemoryInsightType) error {
@@ -334,6 +340,34 @@ func (s *inMemInsightOps) GetInsightsByTier(memoryID memind.MemoryId, tier memin
 		}
 	}
 	return result, nil
+}
+
+func (s *inMemInsightOps) GetBranchByType(memoryID memind.MemoryId, typeName string) (*memind.MemoryInsight, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.insights[memoryID] == nil {
+		return nil, nil
+	}
+	for _, ins := range s.insights[memoryID] {
+		if ins.Type == typeName && ins.Tier == memind.TierBranch {
+			return ins, nil
+		}
+	}
+	return nil, nil
+}
+
+func (s *inMemInsightOps) GetRootByType(memoryID memind.MemoryId, rootTypeName string) (*memind.MemoryInsight, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.insights[memoryID] == nil {
+		return nil, nil
+	}
+	for _, ins := range s.insights[memoryID] {
+		if ins.Type == rootTypeName && ins.Tier == memind.TierRoot {
+			return ins, nil
+		}
+	}
+	return nil, nil
 }
 
 func (s *inMemInsightOps) DeleteInsights(memoryID memind.MemoryId, insightIDs []int64) error {

@@ -25,7 +25,7 @@ type memoryImpl struct {
 	vecStore    vector.MemoryVector
 	textSearch  tsearch.MemoryTextSearch
 	llm         *llm.ChatClientRegistry
-	treeBuilder *insight.TreeBuilder
+	reorganizer *insight.TreeReorganizer
 	options     memind.MemoryBuildOptions
 }
 
@@ -38,7 +38,7 @@ func newMemory(
 	vec vector.MemoryVector,
 	ts tsearch.MemoryTextSearch,
 	llm *llm.ChatClientRegistry,
-	treeBuilder *insight.TreeBuilder,
+	reorganizer *insight.TreeReorganizer,
 	opts memind.MemoryBuildOptions,
 ) *memoryImpl {
 	return &memoryImpl{
@@ -49,7 +49,7 @@ func newMemory(
 		vecStore:    vec,
 		textSearch:  ts,
 		llm:         llm,
-		treeBuilder: treeBuilder,
+		reorganizer: reorganizer,
 		options:     opts,
 	}
 }
@@ -68,9 +68,20 @@ func (m *memoryImpl) Extract(req memind.ExtractionRequest) (*memind.ExtractionRe
 		return nil, err
 	}
 
-	// 提取完成后执行洞察树晋升（仅在有新洞察生成时）
-	if len(result.Insights.Insights) > 0 && m.treeBuilder != nil {
-		_ = m.treeBuilder.Promote(req.MemoryID)
+	// 提取完成后按洞察类型执行树重组织
+	if len(result.Insights.Insights) > 0 && m.reorganizer != nil {
+		cfg := memind.DefaultInsightTreeConfig()
+		language := req.Config.Language
+		if language == "" {
+			language = "English"
+		}
+		for _, t := range result.Items.Types {
+			leafs := result.Insights.ByType[t.Name]
+			if len(leafs) == 0 {
+				continue
+			}
+			_ = m.reorganizer.OnLeafsUpdated(req.MemoryID, t.Name, t, leafs, cfg, language)
+		}
 	}
 
 	return result, nil
@@ -295,18 +306,12 @@ func (b *MemoryBuilder) Build() memind.Memory {
 		b.options.Retrieval,
 	)
 
-	cfg := memind.DefaultInsightTreeConfig()
-	treeBuilder := insight.NewTreeBuilder(b.memStore, insight.Config{
-		LeafLevel: insight.TierConfig{
-			MaxChildren: cfg.BranchBubbleThreshold,
-		},
-		BranchLevel: insight.TierConfig{
-			MaxChildren: cfg.RootBubbleThreshold,
-		},
-	})
-	treeBuilder.SetLLM(b.llmReg)
+	gen := insight.NewLlmInsightGenerator(b.llmReg)
+	bubble := insight.NewBubbleTracker()
+	graph := insight.NewNoOpGraphAssistant()
+	reorganizer := insight.NewTreeReorganizer(b.memStore, gen, b.vecStore, bubble, graph)
 
-	mem := newMemory(b.memStore, ext, ret, b.buf, b.vecStore, b.textSearch, b.llmReg, treeBuilder, b.options)
+	mem := newMemory(b.memStore, ext, ret, b.buf, b.vecStore, b.textSearch, b.llmReg, reorganizer, b.options)
 
 	return mem
 }

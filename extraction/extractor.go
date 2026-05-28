@@ -78,7 +78,7 @@ func (e *DefaultExtractor) Extract(req memind.ExtractionRequest) (*memind.Extrac
 		MemoryID: req.MemoryID,
 		RawData:  memind.RawDataResult{RawDataList: rawDataResult.RawDataList, Existed: rawDataResult.Existed},
 		Items:    memind.MemoryItemResult{NewItems: itemResult.NewItems, Types: itemResult.Types},
-		Insights: memind.InsightResult{Insights: insightResult.Insights},
+		Insights: memind.InsightResult{Insights: insightResult.Insights, ByType: insightResult.ByType},
 		Status:   status,
 		Duration: duration,
 	}, nil
@@ -290,6 +290,7 @@ func (e *DefaultExtractor) extractInsights(memoryID memind.MemoryId, itemResult 
 	llmClient := e.llm.Resolve(llm.SlotInsightGenerator)
 	now := time.Now()
 	var insights []*memind.MemoryInsight
+	byType := make(map[string][]*memind.MemoryInsight)
 
 	// 为每个 item 在每个匹配的洞察类型下生成洞察
 	for _, item := range itemResult.NewItems {
@@ -337,10 +338,11 @@ func (e *DefaultExtractor) extractInsights(memoryID memind.MemoryId, itemResult 
 			}
 
 			insights = append(insights, ins)
+			byType[t.Name] = append(byType[t.Name], ins)
 		}
 	}
 
-	return &InsightExtractResult{Insights: insights}, nil
+	return &InsightExtractResult{Insights: insights, ByType: byType}, nil
 }
 
 // generateInsightPoints - 调用 LLM 从条目内容中提取洞察点，无 LLM 时回退为摘要

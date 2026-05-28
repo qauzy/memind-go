@@ -17,4 +17,5 @@ type ItemExtractResult struct {
 // InsightExtractResult - 洞察提取中间结果
 type InsightExtractResult struct {
 	Insights []*memind.MemoryInsight
+	ByType   map[string][]*memind.MemoryInsight
 }

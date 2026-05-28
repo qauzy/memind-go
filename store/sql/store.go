@@ -417,16 +417,17 @@ func (o *SQLInsightOps) UpsertInsightTypes(types []*memind.MemoryInsightType) er
 		}
 		t.UpdatedAt = time.Now()
 		_, err := o.db.Exec(`INSERT INTO memory_insight_types(name,description,description_vector_id,
-			categories,target_tokens,last_updated_at,created_at,updated_at,scope)
-			VALUES(?,?,?,?,?,?,?,?,?)
+			categories,target_tokens,analysis_mode,last_updated_at,created_at,updated_at,scope)
+			VALUES(?,?,?,?,?,?,?,?,?,?)
 			ON CONFLICT(name) DO UPDATE SET
 				description=excluded.description,
 				categories=excluded.categories,
 				target_tokens=excluded.target_tokens,
+				analysis_mode=excluded.analysis_mode,
 				updated_at=excluded.updated_at`,
 			t.Name, t.Description, nullStr(t.DescriptionVectorID),
-			marshalJSON(t.Categories), t.TargetTokens, t.LastUpdatedAt,
-			t.CreatedAt, t.UpdatedAt, string(t.Scope))
+			marshalJSON(t.Categories), t.TargetTokens, string(t.AnalysisMode),
+			t.LastUpdatedAt, t.CreatedAt, t.UpdatedAt, string(t.Scope))
 		if err != nil {
 			return fmt.Errorf("upsert insight type %s: %w", t.Name, err)
 		}
@@ -437,15 +438,16 @@ func (o *SQLInsightOps) UpsertInsightTypes(types []*memind.MemoryInsightType) er
 // GetInsightType - 按名称获取洞察类型
 func (o *SQLInsightOps) GetInsightType(name string) (*memind.MemoryInsightType, error) {
 	row := o.db.QueryRow(`SELECT id,name,description,description_vector_id,categories,target_tokens,
-		last_updated_at,created_at,updated_at,scope FROM memory_insight_types WHERE name=?`, name)
+		analysis_mode,last_updated_at,created_at,updated_at,scope FROM memory_insight_types WHERE name=?`, name)
 	var id int64
 	var n, desc, scope string
 	var descVecID sql.NullString
 	var categories string
 	var targetTokens int
+	var analysisMode string
 	var lastUpdatedAt, createdAt, updatedAt time.Time
 	err := row.Scan(&id, &n, &desc, &descVecID, &categories, &targetTokens,
-		&lastUpdatedAt, &createdAt, &updatedAt, &scope)
+		&analysisMode, &lastUpdatedAt, &createdAt, &updatedAt, &scope)
 	if err != nil {
 		return nil, err
 	}
@@ -455,14 +457,15 @@ func (o *SQLInsightOps) GetInsightType(name string) (*memind.MemoryInsightType, 
 		Categories:          unmarshalStringSlice(categories),
 		TargetTokens:        targetTokens, LastUpdatedAt: lastUpdatedAt,
 		CreatedAt: createdAt, UpdatedAt: updatedAt,
-		Scope: memind.MemoryScope(scope),
+		Scope:        memind.MemoryScope(scope),
+		AnalysisMode: memind.InsightAnalysisMode(analysisMode),
 	}, nil
 }
 
 // ListInsightTypes - 列出所有洞察类型
 func (o *SQLInsightOps) ListInsightTypes() ([]*memind.MemoryInsightType, error) {
 	rows, err := o.db.Query(`SELECT id,name,description,description_vector_id,categories,target_tokens,
-		last_updated_at,created_at,updated_at,scope FROM memory_insight_types`)
+		analysis_mode,last_updated_at,created_at,updated_at,scope FROM memory_insight_types`)
 	if err != nil {
 		return nil, err
 	}
@@ -474,9 +477,10 @@ func (o *SQLInsightOps) ListInsightTypes() ([]*memind.MemoryInsightType, error) 
 		var descVecID sql.NullString
 		var categories string
 		var targetTokens int
+		var analysisMode string
 		var lastUpdatedAt, createdAt, updatedAt time.Time
 		if err := rows.Scan(&id, &n, &desc, &descVecID, &categories, &targetTokens,
-			&lastUpdatedAt, &createdAt, &updatedAt, &scope); err != nil {
+			&analysisMode, &lastUpdatedAt, &createdAt, &updatedAt, &scope); err != nil {
 			return nil, err
 		}
 		result = append(result, &memind.MemoryInsightType{
@@ -485,7 +489,8 @@ func (o *SQLInsightOps) ListInsightTypes() ([]*memind.MemoryInsightType, error) 
 			Categories:          unmarshalStringSlice(categories),
 			TargetTokens:        targetTokens, LastUpdatedAt: lastUpdatedAt,
 			CreatedAt: createdAt, UpdatedAt: updatedAt,
-			Scope: memind.MemoryScope(scope),
+			Scope:        memind.MemoryScope(scope),
+			AnalysisMode: memind.InsightAnalysisMode(analysisMode),
 		})
 	}
 	return result, nil
@@ -602,6 +607,32 @@ func (o *SQLInsightOps) GetInsightsByTier(memoryID memind.MemoryId, tier memind.
 	return result, nil
 }
 
+// GetBranchByType - 按类型获取 Branch 层级的洞察
+func (o *SQLInsightOps) GetBranchByType(memoryID memind.MemoryId, typeName string) (*memind.MemoryInsight, error) {
+	row := o.db.QueryRow(`SELECT id,memory_id,type,scope,name,categories,group_name,last_reasoned_at,
+		summary_embedding,created_at,updated_at,tier,parent_insight_id,child_insight_ids,version,points
+		FROM memory_insights WHERE memory_id=? AND type=? AND tier='BRANCH' LIMIT 1`,
+		memoryID.Identifier(), typeName)
+	ins, err := scanInsight(row)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return ins, err
+}
+
+// GetRootByType - 按类型获取 Root 层级的洞察
+func (o *SQLInsightOps) GetRootByType(memoryID memind.MemoryId, rootTypeName string) (*memind.MemoryInsight, error) {
+	row := o.db.QueryRow(`SELECT id,memory_id,type,scope,name,categories,group_name,last_reasoned_at,
+		summary_embedding,created_at,updated_at,tier,parent_insight_id,child_insight_ids,version,points
+		FROM memory_insights WHERE memory_id=? AND type=? AND tier='ROOT' LIMIT 1`,
+		memoryID.Identifier(), rootTypeName)
+	ins, err := scanInsight(row)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return ins, err
+}
+
 // DeleteInsights - 批量删除洞察
 func (o *SQLInsightOps) DeleteInsights(memoryID memind.MemoryId, insightIDs []int64) error {
 	if len(insightIDs) == 0 {
@@ -624,16 +655,16 @@ func (o *SQLInsightOps) DeleteInsights(memoryID memind.MemoryId, insightIDs []in
 func (o *SQLInsightOps) defaultInsightTypes() []*memind.MemoryInsightType {
 	now := time.Now()
 	return []*memind.MemoryInsightType{
-		{Name: "identity", Scope: memind.ScopeUser, Categories: []string{"PROFILE"}, TargetTokens: 300, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
-		{Name: "preferences", Scope: memind.ScopeUser, Categories: []string{"BEHAVIOR"}, TargetTokens: 300, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
-		{Name: "relationships", Scope: memind.ScopeUser, Categories: []string{"BEHAVIOR", "EVENT"}, TargetTokens: 300, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
-		{Name: "experiences", Scope: memind.ScopeUser, Categories: []string{"EVENT"}, TargetTokens: 400, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
-		{Name: "behavior", Scope: memind.ScopeUser, Categories: []string{"BEHAVIOR"}, TargetTokens: 300, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
-		{Name: "directives", Scope: memind.ScopeAgent, Categories: []string{"DIRECTIVE"}, TargetTokens: 400, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
-		{Name: "playbooks", Scope: memind.ScopeAgent, Categories: []string{"PLAYBOOK"}, TargetTokens: 500, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
-		{Name: "resolutions", Scope: memind.ScopeAgent, Categories: []string{"RESOLUTION"}, TargetTokens: 400, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
-		{Name: "profile", Scope: memind.ScopeUser, Categories: []string{"PROFILE", "BEHAVIOR", "EVENT"}, TargetTokens: 800, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
-		{Name: "interaction", Scope: memind.ScopeAgent, Categories: []string{"TOOL", "DIRECTIVE", "PLAYBOOK", "RESOLUTION"}, TargetTokens: 800, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+		{Name: "identity", Scope: memind.ScopeUser, Categories: []string{"PROFILE"}, TargetTokens: 300, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+		{Name: "preferences", Scope: memind.ScopeUser, Categories: []string{"BEHAVIOR"}, TargetTokens: 300, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+		{Name: "relationships", Scope: memind.ScopeUser, Categories: []string{"BEHAVIOR", "EVENT"}, TargetTokens: 300, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+		{Name: "experiences", Scope: memind.ScopeUser, Categories: []string{"EVENT"}, TargetTokens: 400, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+		{Name: "behavior", Scope: memind.ScopeUser, Categories: []string{"BEHAVIOR"}, TargetTokens: 300, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+		{Name: "directives", Scope: memind.ScopeAgent, Categories: []string{"DIRECTIVE"}, TargetTokens: 400, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+		{Name: "playbooks", Scope: memind.ScopeAgent, Categories: []string{"PLAYBOOK"}, TargetTokens: 500, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+		{Name: "resolutions", Scope: memind.ScopeAgent, Categories: []string{"RESOLUTION"}, TargetTokens: 400, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+		{Name: "profile", Scope: memind.ScopeUser, Categories: []string{"PROFILE", "BEHAVIOR", "EVENT"}, TargetTokens: 800, AnalysisMode: memind.AnalysisModeRoot, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+		{Name: "interaction", Scope: memind.ScopeAgent, Categories: []string{"TOOL", "DIRECTIVE", "PLAYBOOK", "RESOLUTION"}, TargetTokens: 800, AnalysisMode: memind.AnalysisModeRoot, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
 	}
 }
 

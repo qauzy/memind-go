@@ -37,6 +37,8 @@ type InsightOperations interface {
 	ListInsights(memoryID memind.MemoryId) ([]*memind.MemoryInsight, error)
 	GetInsightsByType(memoryID memind.MemoryId, insightType string) ([]*memind.MemoryInsight, error)
 	GetInsightsByTier(memoryID memind.MemoryId, tier memind.InsightTier) ([]*memind.MemoryInsight, error)
+	GetBranchByType(memoryID memind.MemoryId, typeName string) (*memind.MemoryInsight, error)
+	GetRootByType(memoryID memind.MemoryId, rootTypeName string) (*memind.MemoryInsight, error)
 	DeleteInsights(memoryID memind.MemoryId, insightIDs []int64) error
 }
 
