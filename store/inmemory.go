@@ -231,8 +231,8 @@ func defaultInsightTypes() []*memind.MemoryInsightType {
 	now := time.Now()
 	types := []*memind.MemoryInsightType{
 		{Name: "identity", Scope: memind.ScopeUser, Categories: []string{"PROFILE"}, TargetTokens: 300, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
-		{Name: "preferences", Scope: memind.ScopeUser, Categories: []string{"BEHAVIOR"}, TargetTokens: 300, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
-		{Name: "relationships", Scope: memind.ScopeUser, Categories: []string{"BEHAVIOR", "EVENT"}, TargetTokens: 300, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+		{Name: "preferences", Scope: memind.ScopeUser, Categories: []string{"PROFILE"}, TargetTokens: 300, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+		{Name: "relationships", Scope: memind.ScopeUser, Categories: []string{"PROFILE"}, TargetTokens: 300, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
 		{Name: "experiences", Scope: memind.ScopeUser, Categories: []string{"EVENT"}, TargetTokens: 400, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
 		{Name: "behavior", Scope: memind.ScopeUser, Categories: []string{"BEHAVIOR"}, TargetTokens: 300, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
 		{Name: "directives", Scope: memind.ScopeAgent, Categories: []string{"DIRECTIVE"}, TargetTokens: 400, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},

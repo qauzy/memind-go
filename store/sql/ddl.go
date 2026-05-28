@@ -38,6 +38,32 @@ func (d dialect) booleanType() string {
 	return "INTEGER"
 }
 
+// stringType - 返回对应方言的字符串主键类型（MySQL 禁止 TEXT 作主键）
+func (d dialect) stringType() string {
+	if d == dialectMySQL {
+		return "VARCHAR(255)"
+	}
+	return "TEXT"
+}
+
+// upsertSuffix - 返回方言对应的 UPSERT 子句
+// MySQL:  ON DUPLICATE KEY UPDATE col=VALUES(col)
+// SQLite: ON CONFLICT(pk) DO UPDATE SET col=excluded.col
+func (d dialect) upsertSuffix(pk string, cols ...string) string {
+	var setPairs []string
+	for _, c := range cols {
+		if d == dialectMySQL {
+			setPairs = append(setPairs, fmt.Sprintf("%s=VALUES(%s)", c, c))
+		} else {
+			setPairs = append(setPairs, fmt.Sprintf("%s=excluded.%s", c, c))
+		}
+	}
+	if d == dialectMySQL {
+		return "ON DUPLICATE KEY UPDATE " + strings.Join(setPairs, ", ")
+	}
+	return fmt.Sprintf("ON CONFLICT(%s) DO UPDATE SET %s", pk, strings.Join(setPairs, ", "))
+}
+
 // createTableSQL - 生成建表 DDL 语句列表，适配当前方言
 func (d dialect) createTableSQL() []string {
 	ai := d.autoIncrement()
@@ -71,7 +97,7 @@ func (d dialect) createTableSQL() []string {
 
 		// memory_raw_data
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS memory_raw_data (
-			id TEXT PRIMARY KEY,
+			id %s PRIMARY KEY,
 			memory_id TEXT NOT NULL,
 			content_type TEXT NOT NULL DEFAULT '',
 			source_client TEXT NOT NULL DEFAULT '',
@@ -84,7 +110,7 @@ func (d dialect) createTableSQL() []string {
 			created_at %s NOT NULL,
 			start_time %s,
 			end_time %s
-		)`, ts, ts, ts),
+		)`, d.stringType(), ts, ts, ts),
 
 		`CREATE INDEX IF NOT EXISTS idx_raw_data_memory_id ON memory_raw_data(memory_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_raw_data_content_id ON memory_raw_data(content_id)`,

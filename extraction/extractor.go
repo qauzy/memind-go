@@ -14,6 +14,7 @@ import (
 )
 
 // MemoryExtractor - 提取管线接口
+// 定义两层提取入口：Extract（直接提取）和 AddMessage（缓冲后提取）
 type MemoryExtractor interface {
 	Extract(req memind.ExtractionRequest) (*memind.ExtractionResult, error)
 	AddMessage(memoryID memind.MemoryId, msg memind.Message, config memind.ExtractionConfig) (*memind.ExtractionResult, error)
@@ -176,33 +177,175 @@ func (e *DefaultExtractor) extractRawData(memoryID memind.MemoryId, content memi
 }
 
 // extractItems - 第二阶段：从原始数据中提取结构化 MemoryItem
+//
+// 两路策略：
+//  1. LLM 语义分类（首选）：调用 SlotItemExtraction 槽位的 LLM，传入完整对话文本，
+//     由 LLM 根据语义决定每个条目的 category 和 insightTypes。
+//     返回的每个条目是原子事实（非原始文本），具有精准的分类归属。
+//  2. 哈希分桶（回退）：无 LLM 时用 simpleHash 首字节对分类数量取模，
+//     均匀但不区分语义。条目内容保持原始文本。
+//
+// LLM 路径产生的条目将 insightTypes 存入 item.Metadata["insightTypes"]，
+// extractInsights 后续会消费此字段精确定位应生成的洞察类型。
 func (e *DefaultExtractor) extractItems(memoryID memind.MemoryId, rawResult *RawDataExtractResult, cfg memind.ExtractionConfig, language string) (*ItemExtractResult, error) {
-	// 如果 Item 提取被禁用，直接返回空结果
 	if !e.opts.Item.Enabled {
 		return &ItemExtractResult{}, nil
 	}
 
-	var itemTypes []memind.MemoryInsightType // 本轮新条目关联的洞察类型列表
-	var newItems []*memind.MemoryItem        // 本轮实际新增的条目
-	now := time.Now()
+	llmClient := e.llm.Resolve(llm.SlotItemExtraction)
+	if _, ok := llmClient.(*llm.NoOpChatClient); !ok {
+		return e.extractItemsWithLLM(memoryID, rawResult, cfg, llmClient)
+	}
+	return e.extractItemsHash(memoryID, rawResult, cfg)
+}
 
-	// ---- 遍历每个原始数据，构造条目 ----
+// extractItemsWithLLM - LLM 语义分类路径
+// Modified: 2026-05-28 - 从 Java MemoryItemUnifiedPrompts / LlmItemExtractionStrategy 移植
+func (e *DefaultExtractor) extractItemsWithLLM(memoryID memind.MemoryId, rawResult *RawDataExtractResult, cfg memind.ExtractionConfig, client llm.StructuredChatClient) (*ItemExtractResult, error) {
+	scope := cfg.Scope
+
+	// 从所有 RawData 拼接对话文本
+	var conversation string
+	for i, rd := range rawResult.RawDataList {
+		if i > 0 {
+			conversation += "\n"
+		}
+		conversation += rd.Caption
+	}
+
+	// 加载 scope 匹配的洞察类型列表
+	allTypes, _ := e.memStore.Insights().ListInsightTypes()
+	var scopeTypes []memind.MemoryInsightType
+	for _, it := range allTypes {
+		if it.Scope == scope {
+			scopeTypes = append(scopeTypes, *it)
+		}
+	}
+
+	// 调用 LLM
+	var resp llmItemExtractionResponse
+	err := client.CallStructured([]llm.ChatMessage{
+		{Role: llm.RoleSystem, Content: itemExtractionSystemPrompt},
+		{Role: llm.RoleUser, Content: fmt.Sprintf(itemExtractionUserPrompt, conversation)},
+	}, &resp)
+	if err != nil {
+		return nil, fmt.Errorf("llm item extraction: %w", err)
+	}
+
+	if len(resp.Items) == 0 {
+		return &ItemExtractResult{}, nil
+	}
+
+	now := time.Now()
+	var newItems []*memind.MemoryItem
+
+	for _, extracted := range resp.Items {
+		if extracted.Content == "" {
+			continue
+		}
+		if extracted.Category == "" {
+			continue
+		}
+
+		hash := simpleHash(extracted.Content)
+		existing, _ := e.memStore.Items().GetItemByHash(memoryID, hash)
+		if existing != nil {
+			continue
+		}
+
+		// 校验 LLM 返回的分类是否合法，不合法则跳过
+		cat := memind.MemoryCategory(extracted.Category)
+		if !isValidCategory(cat, scope) {
+			continue
+		}
+
+		// 过滤 insightTypes：只保留在 scopeTypes 中存在的类型名
+		var validTypes []string
+		for _, tName := range extracted.InsightTypes {
+			for _, st := range scopeTypes {
+				if st.Name == tName {
+					validTypes = append(validTypes, tName)
+					break
+				}
+			}
+		}
+		if len(validTypes) == 0 {
+			continue
+		}
+
+		item := &memind.MemoryItem{
+			MemoryID:    memoryID.Identifier(),
+			Content:     extracted.Content,
+			Scope:       scope,
+			Category:    cat,
+			RawDataID:   rawResult.RawDataList[0].ID,
+			ContentHash: hash,
+			Metadata:    map[string]any{"insightTypes": validTypes},
+			CreatedAt:   now,
+			ObservedAt:  &now,
+			Type:        memind.ItemTypeFact,
+		}
+		newItems = append(newItems, item)
+	}
+
+	if len(newItems) == 0 {
+		return &ItemExtractResult{}, nil
+	}
+
+	if err := e.memStore.Items().UpsertItems(memoryID, newItems); err != nil {
+		return nil, err
+	}
+
+	for _, item := range newItems {
+		docID := fmt.Sprintf("item-%d", item.ID)
+		e.textSearch.Index(memoryID, docID, item.Content, tsearch.TargetItem)
+
+		if e.vector != nil {
+			vecID, _ := e.vector.Store(memoryID, item.Content, map[string]any{"type": "item", "item_id": item.ID})
+			item.VectorID = vecID
+		}
+
+		if e.buf != nil {
+			types := item.Metadata["insightTypes"].([]string)
+			for _, tName := range types {
+				e.buf.InsightBuffer().Add(memoryID, item.ID, tName)
+			}
+		}
+	}
+
+	return &ItemExtractResult{
+		NewItems: newItems,
+		Types:    scopeTypes,
+	}, nil
+}
+
+// extractItemsHash - 哈希分桶回退路径
+// Modified: 2026-05-28 - 从原 extractItems 提取为独立方法
+func (e *DefaultExtractor) extractItemsHash(memoryID memind.MemoryId, rawResult *RawDataExtractResult, cfg memind.ExtractionConfig) (*ItemExtractResult, error) {
+	scope := cfg.Scope
+	categories := memind.UserCategories()
+	if scope == memind.ScopeAgent {
+		categories = memind.AgentCategories()
+	}
+
+	allTypes, _ := e.memStore.Insights().ListInsightTypes()
+	var scopeTypes []memind.MemoryInsightType
+	for _, it := range allTypes {
+		if it.Scope == scope {
+			scopeTypes = append(scopeTypes, *it)
+		}
+	}
+
+	now := time.Now()
+	var newItems []*memind.MemoryItem
+
 	for _, rd := range rawResult.RawDataList {
-		// 对 caption 计算哈希，用于内容级去重
 		hash := simpleHash(rd.Caption)
 		existing, _ := e.memStore.Items().GetItemByHash(memoryID, hash)
 		if existing != nil {
-			continue // 相同内容已存在，跳过
+			continue
 		}
 
-		// 根据 scope 选择分类列表：USER 用 UserCategories，AGENT 用 AgentCategories
-		scope := cfg.Scope
-		categories := memind.UserCategories()
-		if scope == memind.ScopeAgent {
-			categories = memind.AgentCategories()
-		}
-
-		// 用 hash 首字节对分类数取模，均匀分布条目到各类
 		category := categories[0]
 		if len(categories) > 1 {
 			idx := 0
@@ -213,7 +356,6 @@ func (e *DefaultExtractor) extractItems(memoryID memind.MemoryId, rawResult *Raw
 			category = categories[idx%len(categories)]
 		}
 
-		// 构造 MemoryItem，初始类型固定为 FACT
 		item := &memind.MemoryItem{
 			MemoryID:    memoryID.Identifier(),
 			Content:     rd.Caption,
@@ -227,61 +369,45 @@ func (e *DefaultExtractor) extractItems(memoryID memind.MemoryId, rawResult *Raw
 			Type:        memind.ItemTypeFact,
 		}
 		newItems = append(newItems, item)
+	}
 
-		// 从 store 加载所有洞察类型，筛选与当前 scope 匹配的
-		insightTypes, _ := e.memStore.Insights().ListInsightTypes()
-		for _, it := range insightTypes {
-			if it.Scope == scope {
-				itemTypes = append(itemTypes, *it)
+	if len(newItems) == 0 {
+		return &ItemExtractResult{}, nil
+	}
+
+	if err := e.memStore.Items().UpsertItems(memoryID, newItems); err != nil {
+		return nil, err
+	}
+
+	for _, item := range newItems {
+		docID := fmt.Sprintf("item-%d", item.ID)
+		e.textSearch.Index(memoryID, docID, item.Content, tsearch.TargetItem)
+
+		if e.vector != nil {
+			vecID, _ := e.vector.Store(memoryID, item.Content, map[string]any{"type": "item", "item_id": item.ID})
+			item.VectorID = vecID
+		}
+
+		if e.buf != nil {
+			for _, it := range scopeTypes {
+				e.buf.InsightBuffer().Add(memoryID, item.ID, it.Name)
 			}
 		}
 	}
 
-	// ---- 若有新条目，执行持久化和索引构建 ----
-	if len(newItems) > 0 {
-		// ① 持久化到 store，自动分配 item.ID
-		if err := e.memStore.Items().UpsertItems(memoryID, newItems); err != nil {
-			return nil, err
-		}
-
-		for _, item := range newItems {
-			// ② 建立 BM25 全文索引，docID = "item-{id}"
-			docID := fmt.Sprintf("item-%d", item.ID)
-			e.textSearch.Index(memoryID, docID, item.Content, tsearch.TargetItem)
-
-			// ③ 生成向量嵌入并存入向量索引，vectorID 写回 item
-			if e.vector != nil {
-				vecID, _ := e.vector.Store(memoryID, item.Content, map[string]any{"type": "item", "item_id": item.ID})
-				item.VectorID = vecID
-			}
-
-			// ④ 将 (itemID, insightTypeName) 推入 InsightBuffer
-			//    第三阶段 extractInsights 会消费这些记录来生成洞察
-			if e.buf != nil {
-				for _, it := range itemTypes {
-					e.buf.InsightBuffer().Add(memoryID, item.ID, it.Name)
-				}
-			}
-		}
-	}
-
-	// 去重洞察类型后返回
-	uniqTypes := dedupTypes(itemTypes)
 	return &ItemExtractResult{
 		NewItems: newItems,
-		Types:    uniqTypes,
+		Types:    scopeTypes,
 	}, nil
 }
 
 // extractInsights - 第三阶段：基于提取的条目生成洞察
 //
-// 对每个 (newItem × insightType) 组合执行：
-//  1. 调用 LLM（SlotInsightGenerator）从条目内容中提取结构化 InsightPoint
-//  2. 若无 LLM 或调用失败，回退为将条目内容包为单个 SUMMARY 点
-//  3. 构造 MemoryInsight（Tier=Leaf），持久化到 store
-//  4. 建立 BM25 全文索引（docID = "insight-{id}"）
-//  5. 对 PointsContent 生成向量嵌入，存入向量索引
-//  6. 收集所有新洞察返回
+// 分发逻辑：
+//   - 若 item.Metadata["insightTypes"] 存在（LLM 路径），仅对该列表中的类型生成 LEAF
+//   - 否则（哈希回退路径），由 typeMatchesCategory 按 Category ↔ Categories 匹配决定
+//
+// 每条 LEAF 的 Type 取洞察类型名，Points 由 generateInsightPoints 生成。
 func (e *DefaultExtractor) extractInsights(memoryID memind.MemoryId, itemResult *ItemExtractResult, cfg memind.ExtractionConfig) (*InsightExtractResult, error) {
 	if !cfg.EnableInsight || !e.opts.Insight.Enabled || len(itemResult.NewItems) == 0 {
 		return &InsightExtractResult{}, nil
@@ -292,17 +418,18 @@ func (e *DefaultExtractor) extractInsights(memoryID memind.MemoryId, itemResult 
 	var insights []*memind.MemoryInsight
 	byType := make(map[string][]*memind.MemoryInsight)
 
-	// 为每个 item 在每个匹配的洞察类型下生成洞察
+	// 建立类型名 → 类型定义的快速查找表
+	typeMap := make(map[string]memind.MemoryInsightType)
+	for _, t := range itemResult.Types {
+		typeMap[t.Name] = t
+	}
+
 	for _, item := range itemResult.NewItems {
-		for _, t := range itemResult.Types {
-			// 检查 item 的 category 是否匹配洞察类型的 categories
-			if !typeMatchesCategory(t, item.Category) {
-				continue
-			}
+		// 判断是否有 LLM 分配的 insightTypes
+		assignedTypes := e.resolveItemInsightTypes(item, typeMap)
 
-			// 调用 LLM 或回退，生成洞察点列表
+		for _, t := range assignedTypes {
 			points := e.generateInsightPoints(llmClient, item, t, cfg.Language)
-
 			if len(points) == 0 {
 				continue
 			}
@@ -319,18 +446,15 @@ func (e *DefaultExtractor) extractInsights(memoryID memind.MemoryId, itemResult 
 				Version:   1,
 			}
 
-			// 持久化到 store（自动分配 ins.ID）
 			if err := e.memStore.Insights().UpsertInsights(memoryID, []*memind.MemoryInsight{ins}); err != nil {
 				return nil, fmt.Errorf("upsert insight: %w", err)
 			}
 
-			// BM25 全文索引
 			if e.textSearch != nil {
 				docID := fmt.Sprintf("insight-%d", ins.ID)
 				_ = e.textSearch.Index(memoryID, docID, ins.PointsContent(), tsearch.TargetInsight)
 			}
 
-			// 向量索引
 			if e.vector != nil {
 				vecID, _ := e.vector.Store(memoryID, ins.PointsContent(), map[string]any{"type": "insight", "insight_id": ins.ID})
 				ins.SummaryEmbedding = nil
@@ -345,9 +469,48 @@ func (e *DefaultExtractor) extractInsights(memoryID memind.MemoryId, itemResult 
 	return &InsightExtractResult{Insights: insights, ByType: byType}, nil
 }
 
+// resolveItemInsightTypes - 解析条目应生成的洞察类型列表
+//
+// 优先读取 item.Metadata["insightTypes"]（LLM 语义分类路径），
+// 回退到按 Category 匹配 typeMap 中所有类型（哈希分桶路径）。
+func (e *DefaultExtractor) resolveItemInsightTypes(item *memind.MemoryItem, typeMap map[string]memind.MemoryInsightType) []memind.MemoryInsightType {
+	// LLM 路径：从 Metadata 读取 insightTypes
+	if item.Metadata != nil {
+		if raw, ok := item.Metadata["insightTypes"]; ok {
+			if names, ok := raw.([]string); ok && len(names) > 0 {
+				var result []memind.MemoryInsightType
+				for _, name := range names {
+					if t, found := typeMap[name]; found {
+						result = append(result, t)
+					}
+				}
+				return result
+			}
+			if names, ok := raw.([]any); ok && len(names) > 0 {
+				var result []memind.MemoryInsightType
+				for _, n := range names {
+					name, _ := n.(string)
+					if t, found := typeMap[name]; found {
+						result = append(result, t)
+					}
+				}
+				return result
+			}
+		}
+	}
+
+	// 哈希回退路径：按 Category 匹配所有类型
+	var result []memind.MemoryInsightType
+	for _, t := range typeMap {
+		if typeMatchesCategory(t, item.Category) {
+			result = append(result, t)
+		}
+	}
+	return result
+}
+
 // generateInsightPoints - 调用 LLM 从条目内容中提取洞察点，无 LLM 时回退为摘要
 func (e *DefaultExtractor) generateInsightPoints(client llm.StructuredChatClient, item *memind.MemoryItem, typeDef memind.MemoryInsightType, language string) []memind.InsightPoint {
-	// 先尝试 LLM 提取
 	if _, ok := client.(*llm.NoOpChatClient); !ok {
 		resp, err := client.Call([]llm.ChatMessage{
 			{Role: llm.RoleSystem, Content: insightSystemPrompt},
@@ -362,7 +525,6 @@ func (e *DefaultExtractor) generateInsightPoints(client llm.StructuredChatClient
 		}
 	}
 
-	// 回退：将条目内容包为单个 SUMMARY 点
 	return []memind.InsightPoint{
 		{
 			PointID:       fmt.Sprintf("sp-%d", time.Now().UnixNano()),
@@ -383,7 +545,22 @@ func typeMatchesCategory(t memind.MemoryInsightType, cat memind.MemoryCategory) 
 	return false
 }
 
-// insightSystemPrompt - 洞察提取的系统提示词
+// isValidCategory - 检查 category 是否在指定 scope 的合法分类集合中
+func isValidCategory(cat memind.MemoryCategory, scope memind.MemoryScope) bool {
+	var candidates []memind.MemoryCategory
+	if scope == memind.ScopeAgent {
+		candidates = memind.AgentCategories()
+	} else {
+		candidates = memind.UserCategories()
+	}
+	for _, c := range candidates {
+		if c == cat {
+			return true
+		}
+	}
+	return false
+}
+
 const insightSystemPrompt = `You are an insight extraction system. Extract structured insights concisely.
 Return ONLY a JSON array of objects, each with:
 - "pointId": a unique string identifier
@@ -391,8 +568,6 @@ Return ONLY a JSON array of objects, each with:
 - "content": the insight text in the original language
 - "sourceItemIds": array of source item ID strings`
 
-// insightUserPrompt - 洞察提取的用户提示词模板
-// 参数依次为：洞察类型名、类型描述、条目内容、条目 ID
 const insightUserPrompt = `Extract structured insight points about "%s" from the following information.
 
 Type: %s

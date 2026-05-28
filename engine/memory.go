@@ -207,13 +207,14 @@ func (m *memoryImpl) Close() error {
 
 // MemoryBuilder - Memory 实例的构建器，采用依赖注入方式组装子模块
 type MemoryBuilder struct {
-	memStore   store.MemoryStore
-	buf        *buffer.InMemoryBuffer
-	vecStore   vector.MemoryVector
-	textSearch tsearch.MemoryTextSearch
-	llmReg     *llm.ChatClientRegistry
-	observer   tracing.MemoryObserver
-	options    memind.MemoryBuildOptions
+	memStore        store.MemoryStore
+	buf             *buffer.InMemoryBuffer
+	vecStore        vector.MemoryVector
+	textSearch      tsearch.MemoryTextSearch
+	llmReg          *llm.ChatClientRegistry
+	embeddingClient llm.EmbeddingClient
+	observer        tracing.MemoryObserver
+	options         memind.MemoryBuildOptions
 }
 
 // Builder - 创建新的 MemoryBuilder 实例
@@ -246,6 +247,13 @@ func (b *MemoryBuilder) Vector(v vector.MemoryVector) *MemoryBuilder {
 // TextSearch - 设置全文搜索实现（默认 InMemoryBM25Search）
 func (b *MemoryBuilder) TextSearch(ts tsearch.MemoryTextSearch) *MemoryBuilder {
 	b.textSearch = ts
+	return b
+}
+
+// EmbeddingClient - 设置外部嵌入客户端，替代默认哈希嵌入
+// 注册后 InMemoryVectorStore 的 Embed() 会优先调用此客户端
+func (b *MemoryBuilder) EmbeddingClient(client llm.EmbeddingClient) *MemoryBuilder {
+	b.embeddingClient = client
 	return b
 }
 
@@ -287,6 +295,13 @@ func (b *MemoryBuilder) Build() memind.Memory {
 	}
 	if b.textSearch == nil {
 		b.textSearch = tsearch.NewInMemoryBM25Search()
+	}
+
+	// 若设置了嵌入客户端，注入到向量存储
+	if b.embeddingClient != nil {
+		if vs, ok := b.vecStore.(*vector.InMemoryVectorStore); ok {
+			vs.SetEmbeddingClient(b.embeddingClient)
+		}
 	}
 
 	ext := extraction.NewExtractor(

@@ -26,9 +26,9 @@ func NewStore(db *sql.DB, driverName string) *SQLStore {
 		d = dialectMySQL
 	}
 	s := &SQLStore{db: db, dialect: d}
-	s.rawOps = &SQLRawDataOps{db: db}
+	s.rawOps = &SQLRawDataOps{db: db, dialect: d}
 	s.itemOps = &SQLItemOps{db: db}
-	s.insOps = &SQLInsightOps{db: db}
+	s.insOps = &SQLInsightOps{db: db, dialect: d}
 	return s
 }
 
@@ -61,7 +61,10 @@ func (s *SQLStore) Insights() store.InsightOperations { return s.insOps }
 // ---------- RawData ----------
 
 // SQLRawDataOps - SQL 版原始数据存储操作
-type SQLRawDataOps struct{ db *sql.DB }
+type SQLRawDataOps struct {
+	db      *sql.DB
+	dialect dialect
+}
 
 // scanRawData - 扫描一行数据到 MemoryRawData 结构体
 func scanRawData(scanner interface{ Scan(...any) error }) (*memind.MemoryRawData, error) {
@@ -102,14 +105,12 @@ func (o *SQLRawDataOps) UpsertRawData(memoryID memind.MemoryId, rawData []*memin
 		if rd.CreatedAt.IsZero() {
 			rd.CreatedAt = time.Now()
 		}
-		_, err := o.db.Exec(`
+		_, err := o.db.Exec(fmt.Sprintf(`
 			INSERT INTO memory_raw_data(id, memory_id, content_type, source_client, content_id,
 				caption, caption_vector_id, metadata, resource_id, mime_type,
 				created_at, start_time, end_time)
 			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
-			ON CONFLICT(id) DO UPDATE SET
-				caption=excluded.caption, metadata=excluded.metadata,
-				caption_vector_id=excluded.caption_vector_id`,
+			%s`, o.dialect.upsertSuffix("id", "caption", "metadata", "caption_vector_id")),
 			rd.ID, rd.MemoryID, rd.ContentType, rd.SourceClient, rd.ContentID,
 			nullStr(rd.Caption), nullStr(rd.CaptionVectorID),
 			nullStr(marshalJSON(rd.Metadata)), nullStr(rd.ResourceID), nullStr(rd.MimeType),
@@ -369,7 +370,10 @@ func (o *SQLItemOps) GetItemByHash(memoryID memind.MemoryId, hash string) (*memi
 // ---------- Insights ----------
 
 // SQLInsightOps - SQL 版洞察存储操作
-type SQLInsightOps struct{ db *sql.DB }
+type SQLInsightOps struct {
+	db      *sql.DB
+	dialect dialect
+}
 
 // scanInsight - 扫描一行数据到 MemoryInsight 结构体
 func scanInsight(scanner interface{ Scan(...any) error }) (*memind.MemoryInsight, error) {
@@ -416,15 +420,10 @@ func (o *SQLInsightOps) UpsertInsightTypes(types []*memind.MemoryInsightType) er
 			t.CreatedAt = time.Now()
 		}
 		t.UpdatedAt = time.Now()
-		_, err := o.db.Exec(`INSERT INTO memory_insight_types(name,description,description_vector_id,
+		_, err := o.db.Exec(fmt.Sprintf(`INSERT INTO memory_insight_types(name,description,description_vector_id,
 			categories,target_tokens,analysis_mode,last_updated_at,created_at,updated_at,scope)
 			VALUES(?,?,?,?,?,?,?,?,?,?)
-			ON CONFLICT(name) DO UPDATE SET
-				description=excluded.description,
-				categories=excluded.categories,
-				target_tokens=excluded.target_tokens,
-				analysis_mode=excluded.analysis_mode,
-				updated_at=excluded.updated_at`,
+			%s`, o.dialect.upsertSuffix("name", "description", "categories", "target_tokens", "analysis_mode", "updated_at")),
 			t.Name, t.Description, nullStr(t.DescriptionVectorID),
 			marshalJSON(t.Categories), t.TargetTokens, string(t.AnalysisMode),
 			t.LastUpdatedAt, t.CreatedAt, t.UpdatedAt, string(t.Scope))
@@ -656,8 +655,8 @@ func (o *SQLInsightOps) defaultInsightTypes() []*memind.MemoryInsightType {
 	now := time.Now()
 	return []*memind.MemoryInsightType{
 		{Name: "identity", Scope: memind.ScopeUser, Categories: []string{"PROFILE"}, TargetTokens: 300, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
-		{Name: "preferences", Scope: memind.ScopeUser, Categories: []string{"BEHAVIOR"}, TargetTokens: 300, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
-		{Name: "relationships", Scope: memind.ScopeUser, Categories: []string{"BEHAVIOR", "EVENT"}, TargetTokens: 300, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+		{Name: "preferences", Scope: memind.ScopeUser, Categories: []string{"PROFILE"}, TargetTokens: 300, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+		{Name: "relationships", Scope: memind.ScopeUser, Categories: []string{"PROFILE"}, TargetTokens: 300, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
 		{Name: "experiences", Scope: memind.ScopeUser, Categories: []string{"EVENT"}, TargetTokens: 400, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
 		{Name: "behavior", Scope: memind.ScopeUser, Categories: []string{"BEHAVIOR"}, TargetTokens: 300, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
 		{Name: "directives", Scope: memind.ScopeAgent, Categories: []string{"DIRECTIVE"}, TargetTokens: 400, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	memind "github.com/openmemind/memind-go"
+	"github.com/openmemind/memind-go/llm"
 )
 
 // vectorEntry - 内存向量条目
@@ -24,9 +25,11 @@ type vectorEntry struct {
 
 // InMemoryVectorStore - 内存版向量存储，内置基于哈希的嵌入引擎
 // 采用 128 维浮点向量，cosine 相似度搜索
+// 可注册外部 EmbeddingClient，注册后 Embed() 优先调用外部 API，否则回退 hashEmbed
 type InMemoryVectorStore struct {
-	mu      sync.RWMutex
-	vectors map[memind.MemoryId]map[string]*vectorEntry
+	mu              sync.RWMutex
+	vectors         map[memind.MemoryId]map[string]*vectorEntry
+	embeddingClient llm.EmbeddingClient
 }
 
 // NewInMemoryVectorStore - 创建内存向量存储
@@ -36,8 +39,20 @@ func NewInMemoryVectorStore() *InMemoryVectorStore {
 	}
 }
 
-// Embed - 对文本计算 128 维哈希嵌入向量
+// SetEmbeddingClient - 设置外部嵌入客户端，替换默认哈希嵌入
+func (s *InMemoryVectorStore) SetEmbeddingClient(client llm.EmbeddingClient) {
+	s.embeddingClient = client
+}
+
+// Embed - 对文本计算嵌入向量
+// 若设置了外部 EmbeddingClient 且非 NoOp，优先使用外部 API；
+// 否则回退到内置 hashEmbed（128维）
 func (s *InMemoryVectorStore) Embed(text string) ([]float32, error) {
+	if s.embeddingClient != nil {
+		if _, ok := s.embeddingClient.(*llm.NoOpEmbeddingClient); !ok {
+			return s.embeddingClient.Embed(text)
+		}
+	}
 	return hashEmbed(text, 128), nil
 }
 
