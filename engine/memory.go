@@ -2,6 +2,8 @@ package engine
 
 import (
 	"fmt"
+	"log"
+	"sync"
 	"time"
 
 	memind "github.com/openmemind/memind-go"
@@ -27,6 +29,8 @@ type memoryImpl struct {
 	llm         *llm.ChatClientRegistry
 	reorganizer *insight.TreeReorganizer
 	options     memind.MemoryBuildOptions
+	rebuildMu   sync.Mutex
+	rebuilt     map[memind.MemoryId]bool
 }
 
 // newMemory - 创建 memoryImpl 实例（包内私有）
@@ -51,6 +55,7 @@ func newMemory(
 		llm:         llm,
 		reorganizer: reorganizer,
 		options:     opts,
+		rebuilt:     make(map[memind.MemoryId]bool),
 	}
 }
 
@@ -117,6 +122,7 @@ func (m *memoryImpl) Commit(memoryID memind.MemoryId, config memind.ExtractionCo
 		config = memind.DefaultExtractionConfig()
 	}
 	pending, _ := m.buf.PendingConversation().Get(memoryID)
+	log.Printf("[engine.Commit] memoryID=%s pending=%d", memoryID.Identifier(), len(pending))
 	if len(pending) == 0 {
 		return &memind.ExtractionResult{
 			MemoryID: memoryID,
@@ -137,6 +143,7 @@ func (m *memoryImpl) Commit(memoryID memind.MemoryId, config memind.ExtractionCo
 		}
 	}
 	defer m.buf.PendingConversation().Clear(memoryID)
+	log.Printf("[engine.Commit] text=%q", text)
 
 	return m.Extract(memind.ExtractionRequest{
 		MemoryID: memoryID,
@@ -145,8 +152,41 @@ func (m *memoryImpl) Commit(memoryID memind.MemoryId, config memind.ExtractionCo
 	})
 }
 
+// rebuildIndexes - 从持久化存储重建 BM25 索引
+func (m *memoryImpl) rebuildIndexes(memoryID memind.MemoryId) {
+	m.rebuildMu.Lock()
+	if m.rebuilt[memoryID] {
+		m.rebuildMu.Unlock()
+		return
+	}
+	m.rebuilt[memoryID] = true
+	m.rebuildMu.Unlock()
+
+	log.Printf("[rebuildIndexes] rebuilding BM25 for %s", memoryID.Identifier())
+
+	items, err := m.memStore.Items().ListItems(memoryID)
+	if err == nil {
+		for _, item := range items {
+			docID := fmt.Sprintf("item-%d", item.ID)
+			m.textSearch.Index(memoryID, docID, item.Content, tsearch.TargetItem)
+		}
+		log.Printf("[rebuildIndexes] indexed %d items", len(items))
+	}
+
+	insights, err := m.memStore.Insights().ListInsights(memoryID)
+	if err == nil {
+		for _, ins := range insights {
+			docID := fmt.Sprintf("insight-%d", ins.ID)
+			m.textSearch.Index(memoryID, docID, ins.PointsContent(), tsearch.TargetInsight)
+		}
+		log.Printf("[rebuildIndexes] indexed %d insights", len(insights))
+	}
+}
+
 // Retrieve - 执行记忆检索：准入检查 → 意图路由 → 策略分发
 func (m *memoryImpl) Retrieve(req memind.RetrievalRequest) (*memind.RetrievalResult, error) {
+	m.rebuildIndexes(req.MemoryID)
+
 	if req.Config == (memind.RetrievalConfig{}) {
 		if m.options.Retrieval.Common.DefaultStrategy == memind.StrategyDeep {
 			req.Config = memind.DeepRetrievalConfig()
@@ -154,7 +194,14 @@ func (m *memoryImpl) Retrieve(req memind.RetrievalRequest) (*memind.RetrievalRes
 			req.Config = memind.SimpleRetrievalConfig()
 		}
 	}
-	return m.retriever.Retrieve(req)
+	log.Printf("[engine.Retrieve] memoryID=%s query=%q", req.MemoryID.Identifier(), req.Query)
+	result, err := m.retriever.Retrieve(req)
+	if err != nil {
+		log.Printf("[engine.Retrieve] error: %v", err)
+		return nil, err
+	}
+	log.Printf("[engine.Retrieve] status=%s items=%d insights=%d rawData=%d", result.Status, len(result.Items), len(result.Insights), len(result.RawData))
+	return result, nil
 }
 
 // GetContext - 构建 LLM 上下文窗口：近期消息 + 检索到的记忆

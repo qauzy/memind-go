@@ -146,7 +146,7 @@ func defaultScoringConfig() ScoringConfig {
 func SimpleRetrievalConfig() RetrievalConfig {
 	return RetrievalConfig{
 		Tier1:   TierConfig{Enabled: true, TopK: 5, MinScore: 0.3},
-		Tier2:   TierConfig{Enabled: true, TopK: 15, MinScore: 0.1, Truncation: TruncationConfig{Enabled: true, MaxItems: 30, TargetTokens: 4000}},
+		Tier2:   TierConfig{Enabled: true, TopK: 15, MinScore: 0.0, Truncation: TruncationConfig{Enabled: true, MaxItems: 30, TargetTokens: 4000}},
 		Tier3:   TierConfig{Enabled: true, TopK: 5, MinScore: 0.0},
 		Rerank:  DisabledRerank(),
 		Scoring: defaultScoringConfig(),

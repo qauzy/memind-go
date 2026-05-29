@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"unicode"
 
 	memind "github.com/openmemind/memind-go"
 )
@@ -13,6 +14,7 @@ import (
 type bm25Index struct {
 	documents map[string]int            // documentID → doc length (word count)
 	terms     map[string]map[string]int // term → documentID → frequency
+	docText   map[string]string         // documentID → original text
 	avgDocLen float64
 	numDocs   int
 }
@@ -56,7 +58,7 @@ func (s *InMemoryBM25Search) Search(memoryID memind.MemoryId, query string, topK
 
 	results := make([]Result, 0, len(scores))
 	for docID, score := range scores {
-		results = append(results, Result{DocumentID: docID, Score: score})
+		results = append(results, Result{DocumentID: docID, Text: idx.docText[docID], Score: score})
 	}
 
 	sort.Slice(results, func(i, j int) bool {
@@ -101,6 +103,7 @@ func (s *InMemoryBM25Search) Remove(memoryID memind.MemoryId, documentID string,
 
 	docLen := idx.documents[documentID]
 	delete(idx.documents, documentID)
+	delete(idx.docText, documentID)
 	idx.numDocs--
 
 	for term, docFreq := range idx.terms {
@@ -131,6 +134,14 @@ func (s *InMemoryBM25Search) Invalidate(memoryID memind.MemoryId) error {
 	return nil
 }
 
+// ClearAll - 清空所有索引
+func (s *InMemoryBM25Search) ClearAll() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.store = make(map[memind.MemoryId]map[SearchTarget]*bm25Index)
+	return nil
+}
+
 // getOrCreateIndex - 获取或创建指定 memory+target 的 BM25 索引
 func (s *InMemoryBM25Search) getOrCreateIndex(memoryID memind.MemoryId, target SearchTarget) *bm25Index {
 	if s.store[memoryID] == nil {
@@ -140,6 +151,7 @@ func (s *InMemoryBM25Search) getOrCreateIndex(memoryID memind.MemoryId, target S
 		s.store[memoryID][target] = &bm25Index{
 			documents: make(map[string]int),
 			terms:     make(map[string]map[string]int),
+			docText:   make(map[string]string),
 		}
 	}
 	return s.store[memoryID][target]
@@ -169,6 +181,7 @@ func (s *InMemoryBM25Search) addDocument(idx *bm25Index, docID, text string) {
 
 	docLen := len(terms)
 	idx.documents[docID] = docLen
+	idx.docText[docID] = text
 	idx.numDocs++
 
 	for term, freq := range termFreq {
@@ -181,17 +194,38 @@ func (s *InMemoryBM25Search) addDocument(idx *bm25Index, docID, text string) {
 	idx.avgDocLen = (idx.avgDocLen*float64(idx.numDocs-1) + float64(docLen)) / float64(idx.numDocs)
 }
 
-// tokenize - 分词：小写 + 按非字母数字字符切分
+// tokenize - 分词：小写 + 按空白切分 + CJK 字符拆分为单字
 func tokenize(text string) []string {
 	text = strings.ToLower(text)
 	var tokens []string
 	for _, part := range strings.Fields(text) {
 		cleaned := strings.Trim(part, ".,!?;:\"'()[]{}\u3001\u3002\uff01\uff1f\uff1b\uff1a\u201c\u201d")
-		if cleaned != "" {
+		if cleaned == "" {
+			continue
+		}
+		// 若包含 CJK 字符，拆分为单字
+		if hasCJK(cleaned) {
+			runes := []rune(cleaned)
+			for _, r := range runes {
+				if r > 0x2E80 && (r < 0x3000 || r > 0x303F) && r != 0xFF0C && r != 0x3001 && r != 0x3002 {
+					tokens = append(tokens, string(r))
+				}
+			}
+		} else {
 			tokens = append(tokens, cleaned)
 		}
 	}
 	return tokens
+}
+
+// hasCJK - 检查字符串是否包含中日韩统一表意文字 (CJK Unified Ideographs)
+func hasCJK(s string) bool {
+	for _, r := range s {
+		if unicode.Is(unicode.Han, r) {
+			return true
+		}
+	}
+	return false
 }
 
 func max(a, b int) int {

@@ -25,4 +25,5 @@ type MemoryTextSearch interface {
 	IndexBatch(memoryID memind.MemoryId, documents map[string]string, target SearchTarget) error
 	Remove(memoryID memind.MemoryId, documentID string, target SearchTarget) error
 	Invalidate(memoryID memind.MemoryId) error
+	ClearAll() error
 }

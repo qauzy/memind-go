@@ -1,6 +1,7 @@
 package retrieval
 
 import (
+	"log"
 	"math"
 	"sort"
 	"strings"
@@ -38,6 +39,7 @@ func (s *SimpleStrategy) Name() string { return string(memind.StrategySimple) }
 // Retrieve - 执行三层检索：洞察(T1) + 条目向量/文本(T2) + 原始数据(T3) → RRF 融合
 func (s *SimpleStrategy) Retrieve(ctx QueryContext, config memind.RetrievalConfig) (*memind.RetrievalResult, error) {
 	query := ctx.SearchQuery()
+	log.Printf("[simple.Retrieve] query=%q", query)
 	if query == "" {
 		return &memind.RetrievalResult{Status: memind.RetrievalEmpty}, nil
 	}
@@ -46,18 +48,27 @@ func (s *SimpleStrategy) Retrieve(ctx QueryContext, config memind.RetrievalConfi
 
 	if config.Tier1.Enabled && s.vecStore != nil {
 		insightResults, err := s.searchInsights(ctx.MemoryID, query, config.Tier1)
+		log.Printf("[simple.Retrieve] Tier1 vector insights: %d results (err=%v)", len(insightResults), err)
 		if err == nil && len(insightResults) > 0 {
 			allResults = append(allResults, insightResults)
+		}
+
+		insightTextResults, err := s.searchInsightsText(ctx.MemoryID, query, config.Tier1)
+		log.Printf("[simple.Retrieve] Tier1 text insights: %d results (err=%v)", len(insightTextResults), err)
+		if err == nil && len(insightTextResults) > 0 {
+			allResults = append(allResults, insightTextResults)
 		}
 	}
 
 	if config.Tier2.Enabled {
 		itemVecResults, err := s.searchItemsVector(ctx.MemoryID, query, config.Tier2)
+		log.Printf("[simple.Retrieve] Tier2 vector: %d results (err=%v)", len(itemVecResults), err)
 		if err == nil && len(itemVecResults) > 0 {
 			allResults = append(allResults, itemVecResults)
 		}
 
 		itemTextResults, err := s.searchItemsText(ctx.MemoryID, query, config.Tier2)
+		log.Printf("[simple.Retrieve] Tier2 text: %d results (err=%v)", len(itemTextResults), err)
 		if err == nil && len(itemTextResults) > 0 {
 			allResults = append(allResults, itemTextResults)
 		}
@@ -65,17 +76,20 @@ func (s *SimpleStrategy) Retrieve(ctx QueryContext, config memind.RetrievalConfi
 
 	if config.Tier3.Enabled && s.vecStore != nil {
 		rdResults, err := s.searchRawData(ctx.MemoryID, query, config.Tier3)
+		log.Printf("[simple.Retrieve] Tier3 rawData: %d results (err=%v)", len(rdResults), err)
 		if err == nil && len(rdResults) > 0 {
 			allResults = append(allResults, rdResults)
 		}
 	}
 
+	log.Printf("[simple.Retrieve] total result streams: %d", len(allResults))
 	if len(allResults) == 0 {
 		return &memind.RetrievalResult{Status: memind.RetrievalEmpty}, nil
 	}
 
 	sc := config.Scoring
 	merged := MergeByRRF(allResults, sc.Fusion.K, sc.Fusion.VectorWeight, sc.Fusion.KeywordWeight)
+	log.Printf("[simple.Retrieve] merged %d results", len(merged))
 
 	if config.Tier2.Truncation.Enabled {
 		maxItems := config.Tier2.Truncation.MaxItems
@@ -102,6 +116,7 @@ func (s *SimpleStrategy) Retrieve(ctx QueryContext, config memind.RetrievalConfi
 			items = append(items, r)
 		}
 	}
+	log.Printf("[simple.Retrieve] final: items=%d insights=%d rawData=%d status=%s", len(items), len(rInsights), len(rRawData), memind.RetrievalSuccess)
 
 	return &memind.RetrievalResult{
 		Items:    items,
@@ -148,6 +163,29 @@ func (s *SimpleStrategy) searchInsights(memoryID memind.MemoryId, query string, 
 	return results, nil
 }
 
+// searchInsightsText - 对洞察层执行 BM25 全文搜索
+func (s *SimpleStrategy) searchInsightsText(memoryID memind.MemoryId, query string, cfg memind.TierConfig) ([]ScoredResult, error) {
+	if s.textSearch == nil {
+		return nil, nil
+	}
+	textResults, err := s.textSearch.Search(memoryID, query, cfg.TopK*2, tsearch.TargetInsight)
+	if err != nil {
+		return nil, err
+	}
+
+	var results []ScoredResult
+	for _, tr := range textResults {
+		results = append(results, ScoredResult{
+			SourceType:  "INSIGHT",
+			SourceID:    tr.DocumentID,
+			Text:        tr.Text,
+			VectorScore: 0,
+			FinalScore:  tr.Score,
+		})
+	}
+	return results, nil
+}
+
 // searchItemsVector - 对条目层执行向量搜索
 func (s *SimpleStrategy) searchItemsVector(memoryID memind.MemoryId, query string, cfg memind.TierConfig) ([]ScoredResult, error) {
 	vecResults, err := s.vecStore.SearchWithFilter(memoryID, query, cfg.TopK*2, cfg.MinScore, nil)
@@ -180,8 +218,10 @@ func (s *SimpleStrategy) searchItemsText(memoryID memind.MemoryId, query string,
 		return nil, err
 	}
 
+	log.Printf("[searchItemsText] BM25 returned %d results", len(textResults))
 	var results []ScoredResult
 	for _, tr := range textResults {
+		log.Printf("[searchItemsText] result docID=%q text=%q score=%.4f", tr.DocumentID, tr.Text, tr.Score)
 		results = append(results, ScoredResult{
 			SourceType:  "ITEM",
 			SourceID:    tr.DocumentID,

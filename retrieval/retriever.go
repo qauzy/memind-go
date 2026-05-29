@@ -1,6 +1,7 @@
 package retrieval
 
 import (
+	"log"
 	"strings"
 
 	memind "github.com/openmemind/memind-go"
@@ -54,6 +55,7 @@ func (r *DefaultRetriever) OnDataChanged(memoryID memind.MemoryId) {}
 // Retrieve - 执行检索：准入检查 → 意图路由 → 策略分发
 func (r *DefaultRetriever) Retrieve(req memind.RetrievalRequest) (*memind.RetrievalResult, error) {
 	query := strings.TrimSpace(req.Query)
+	log.Printf("[retriever.Retrieve] query=%q", query)
 	if query == "" {
 		return &memind.RetrievalResult{Status: memind.RetrievalEmpty}, nil
 	}
@@ -62,11 +64,13 @@ func (r *DefaultRetriever) Retrieve(req memind.RetrievalRequest) (*memind.Retrie
 	if err != nil {
 		return nil, err
 	}
+	log.Printf("[retriever.Retrieve] intent=%v", intent)
 	if intent == IntentSkip {
 		return &memind.RetrievalResult{Status: memind.RetrievalEmpty}, nil
 	}
 
 	strategyName := string(r.config.Common.DefaultStrategy)
+	log.Printf("[retriever.Retrieve] strategy=%q", strategyName)
 	if req.Config.StrategyConfig != (memind.StrategyConfig{}) {
 	}
 
