@@ -606,6 +606,19 @@ func (o *SQLInsightOps) GetInsightsByTier(memoryID memind.MemoryId, tier memind.
 	return result, nil
 }
 
+// GetLeafByGroup - 按类型+分组名获取 Leaf 层级的洞察
+func (o *SQLInsightOps) GetLeafByGroup(memoryID memind.MemoryId, insightType, groupName string) (*memind.MemoryInsight, error) {
+	row := o.db.QueryRow(`SELECT id,memory_id,type,scope,name,categories,group_name,last_reasoned_at,
+		summary_embedding,created_at,updated_at,tier,parent_insight_id,child_insight_ids,version,points
+		FROM memory_insights WHERE memory_id=? AND type=? AND name=? AND tier='LEAF' LIMIT 1`,
+		memoryID.Identifier(), insightType, groupName)
+	ins, err := scanInsight(row)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return ins, err
+}
+
 // GetBranchByType - 按类型获取 Branch 层级的洞察
 func (o *SQLInsightOps) GetBranchByType(memoryID memind.MemoryId, typeName string) (*memind.MemoryInsight, error) {
 	row := o.db.QueryRow(`SELECT id,memory_id,type,scope,name,categories,group_name,last_reasoned_at,

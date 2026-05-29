@@ -119,7 +119,7 @@ func TestImportWeChatContact(t *testing.T) {
 	t.Logf("查找联系人: %s", contactName)
 	cr, err := weflowPost[weflowContactsResponse](
 		weflowBase+"/api/v1/contacts", token,
-		map[string]string{"keyword": contactName, "limit": "10"},
+		map[string]string{"keyword": contactName, "limit": "200"},
 	)
 	if err != nil {
 		t.Fatalf("contacts 查询失败: %v", err)
@@ -137,7 +137,7 @@ func TestImportWeChatContact(t *testing.T) {
 	} else {
 		t.Logf("无断点，拉取全部消息")
 	}
-
+	since = 0
 	// 拉取消息（GET）
 	const fetchLimit = 500
 	t.Logf("拉取最近 %d 条消息 GET (since=%d)...", fetchLimit, since)
@@ -192,7 +192,7 @@ func TestImportWeChatContact(t *testing.T) {
 	config := map[string]any{"enableInsight": true, "scope": "user", "language": "Chinese"}
 
 	extractURL := memindBase + "/open/v1/memory/sync/extract"
-	batchSize := 100
+	batchSize := 50
 	totalExtracted := 0
 
 	for i := 0; i < len(allMessages); i += batchSize {
@@ -204,7 +204,7 @@ func TestImportWeChatContact(t *testing.T) {
 
 		// 拼接本批消息为对话文本
 		var conversation strings.Builder
-		for _, wfMsg := range batch {
+		for idx, wfMsg := range batch {
 			text := pickText(wfMsg)
 			if text == "" {
 				continue
@@ -213,6 +213,7 @@ func TestImportWeChatContact(t *testing.T) {
 			if wfMsg.IsSend == 1 {
 				role = "我"
 			}
+			t.Logf("  [%d] %s: %s", i+idx+1, role, text)
 			conversation.WriteString(fmt.Sprintf("[%s] %s\n", role, text))
 		}
 		if conversation.Len() == 0 {

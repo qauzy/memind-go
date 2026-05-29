@@ -342,6 +342,20 @@ func (s *inMemInsightOps) GetInsightsByTier(memoryID memind.MemoryId, tier memin
 	return result, nil
 }
 
+func (s *inMemInsightOps) GetLeafByGroup(memoryID memind.MemoryId, insightType, groupName string) (*memind.MemoryInsight, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.insights[memoryID] == nil {
+		return nil, nil
+	}
+	for _, ins := range s.insights[memoryID] {
+		if ins.Type == insightType && ins.Tier == memind.TierLeaf && ins.Name == groupName {
+			return ins, nil
+		}
+	}
+	return nil, nil
+}
+
 func (s *inMemInsightOps) GetBranchByType(memoryID memind.MemoryId, typeName string) (*memind.MemoryInsight, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

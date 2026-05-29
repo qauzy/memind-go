@@ -481,51 +481,79 @@ func (e *DefaultExtractor) extractInsights(memoryID memind.MemoryId, itemResult 
 		var generatedInsights []*memind.MemoryInsight
 
 		if hasLLM {
-			// LLM 路径：分组 → 每组合成 LEAF
+			// LLM 路径：分组 → 每组合成 LEAF（更新已有或新建）
 			groups := e.groupItemsForType(llmClient, items, t, cfg.Language)
 			for groupName, groupItems := range groups {
 				if groupName == "UNRELATED" {
 					continue
 				}
+				// 查找是否已有该分组的 LEAF
+				existingLeaf, _ := e.memStore.Insights().GetLeafByGroup(memoryID, t.Name, groupName)
 				points := e.generateLeafInsights(llmClient, groupItems, t, groupName, cfg.Language)
 				if len(points) == 0 {
 					continue
 				}
-				ins := &memind.MemoryInsight{
-					MemoryID:  memoryID.Identifier(),
-					Type:      t.Name,
-					Scope:     t.Scope,
-					Name:      groupName,
-					Points:    points,
-					CreatedAt: now,
-					UpdatedAt: now,
-					Tier:      memind.TierLeaf,
-					Version:   1,
+				if existingLeaf != nil {
+					existingLeaf.Points = points
+					existingLeaf.UpdatedAt = time.Now()
+					existingLeaf.Version++
+					generatedInsights = append(generatedInsights, existingLeaf)
+				} else {
+					ins := &memind.MemoryInsight{
+						MemoryID:  memoryID.Identifier(),
+						Type:      t.Name,
+						Scope:     t.Scope,
+						Name:      groupName,
+						Points:    points,
+						CreatedAt: now,
+						UpdatedAt: now,
+						Tier:      memind.TierLeaf,
+						Version:   1,
+					}
+					generatedInsights = append(generatedInsights, ins)
 				}
-				generatedInsights = append(generatedInsights, ins)
 			}
 		} else {
-			// 回退路径：每条目生成单点摘要
+			// 回退路径：每条目生成单点摘要（更新已有或新建）
+			var leafByGroup *memind.MemoryInsight
 			for _, item := range items {
-				ins := &memind.MemoryInsight{
-					MemoryID: memoryID.Identifier(),
-					Type:     t.Name,
-					Scope:    t.Scope,
-					Name:     t.Name,
-					Points: []memind.InsightPoint{
-						{
+				if leafByGroup == nil {
+					leafByGroup, _ = e.memStore.Insights().GetLeafByGroup(memoryID, t.Name, t.Name)
+				}
+				point := memind.InsightPoint{
+					PointID:       fmt.Sprintf("sp-%d", time.Now().UnixNano()),
+					Type:          memind.PointTypeSummary,
+					Content:       item.Content,
+					SourceItemIDs: []string{fmt.Sprintf("%d", item.ID)},
+				}
+				if leafByGroup != nil {
+					leafByGroup.Points = append(leafByGroup.Points, point)
+					leafByGroup.UpdatedAt = time.Now()
+					leafByGroup.Version++
+				}
+			}
+			if leafByGroup != nil {
+				generatedInsights = append(generatedInsights, leafByGroup)
+			} else {
+				for _, item := range items {
+					ins := &memind.MemoryInsight{
+						MemoryID: memoryID.Identifier(),
+						Type:     t.Name,
+						Scope:    t.Scope,
+						Name:     t.Name,
+						Points: []memind.InsightPoint{{
 							PointID:       fmt.Sprintf("sp-%d", time.Now().UnixNano()),
 							Type:          memind.PointTypeSummary,
 							Content:       item.Content,
 							SourceItemIDs: []string{fmt.Sprintf("%d", item.ID)},
-						},
-					},
-					CreatedAt: now,
-					UpdatedAt: now,
-					Tier:      memind.TierLeaf,
-					Version:   1,
+						}},
+						CreatedAt: now,
+						UpdatedAt: now,
+						Tier:      memind.TierLeaf,
+						Version:   1,
+					}
+					generatedInsights = append(generatedInsights, ins)
 				}
-				generatedInsights = append(generatedInsights, ins)
 			}
 		}
 
