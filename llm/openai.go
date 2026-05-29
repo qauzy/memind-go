@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -135,7 +136,41 @@ func (c *OpenAIClient) CallStructured(messages []ChatMessage, responseType any) 
 	if err != nil {
 		return err
 	}
-	return json.Unmarshal([]byte(resp), responseType)
+	return json.Unmarshal(extractJSON([]byte(resp)), responseType)
+}
+
+// extractJSON - 从 LLM 响应中提取 JSON（清除 <think> 标签和 markdown 代码块）
+// MiniMax 等模型会在 JSON 外包裹 <think>...</think> 或 ```json ... ```
+func extractJSON(raw []byte) []byte {
+	s := string(raw)
+	// 去掉 <think>...</think>
+	for {
+		start := strings.Index(s, "<think>")
+		if start < 0 {
+			break
+		}
+		end := strings.Index(s[start:], "</think>")
+		if end < 0 {
+			break
+		}
+		s = s[:start] + s[start+end+8:]
+	}
+	// 去掉 ```json 和 ```
+	s = strings.ReplaceAll(s, "```json", "")
+	s = strings.ReplaceAll(s, "```", "")
+	// 找到第一个 { 和最后一个 }
+	first := strings.Index(s, "{")
+	last := strings.LastIndex(s, "}")
+	if first >= 0 && last > first {
+		return []byte(s[first : last+1])
+	}
+	// 找第一个 [ 和最后一个 ]（如果是数组）
+	first = strings.Index(s, "[")
+	last = strings.LastIndex(s, "]")
+	if first >= 0 && last > first {
+		return []byte(s[first : last+1])
+	}
+	return raw
 }
 
 // doRequest - 通用的 API 请求执行逻辑
@@ -165,7 +200,7 @@ func (c *OpenAIClient) doRequest(body any) (string, error) {
 
 	var chatResp chatResponse
 	if err := json.Unmarshal(raw, &chatResp); err != nil {
-		return "", fmt.Errorf("parse response: %w", err)
+		return "", fmt.Errorf("parse response (body=%q): %w", string(raw[:min(len(raw), 500)]), err)
 	}
 
 	if chatResp.Error != nil {

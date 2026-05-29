@@ -734,9 +734,8 @@ func isValidCategory(cat memind.MemoryCategory, scope memind.MemoryScope) bool {
 	} else {
 		candidates = memind.UserCategories()
 	}
-	catStr := strings.ToUpper(string(cat))
 	for _, c := range candidates {
-		if strings.ToUpper(string(c)) == catStr {
+		if cat == c {
 			return true
 		}
 	}

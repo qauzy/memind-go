@@ -64,13 +64,13 @@ Return ONLY a raw JSON object. No markdown fences. No surrounding text.
 {
   "points": [
     {
-      "type": "SUMMARY",
+      "type": "summary",
       "content": "Synthesized observation integrating multiple memory items...",
       "sourceItemIds": ["42", "43", "45"],
       "point_reason": "Explain which items contribute what and why this is a stable synthesized point."
     },
     {
-      "type": "REASONING",
+      "type": "reasoning",
       "content": "Inference or pattern derived from combining multiple facts...",
       "sourceItemIds": ["10", "11", "15"],
       "point_reason": "Explain the supporting evidence chain and why this is an inference."
@@ -79,7 +79,7 @@ Return ONLY a raw JSON object. No markdown fences. No surrounding text.
 }
 
 Field descriptions:
-- type: "SUMMARY" or "REASONING" (see Type Decision Logic above).
+- type: "summary" or "reasoning" (see Type Decision Logic above).
 - content: Plain text synthesized statement (1-3 sentences).
 - sourceItemIds: Array of strings referencing input item IDs.
 - point_reason: Reasoning-only field that explains synthesis logic; it will NOT be stored.`

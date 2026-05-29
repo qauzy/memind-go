@@ -23,7 +23,7 @@ func (n *EvidenceNormalizer) NormalizeBranchPoints(points []memind.InsightPoint,
 		if p.Metadata == nil {
 			p.Metadata = make(map[string]string)
 		}
-		p.Metadata["tier"] = "BRANCH"
+		p.Metadata["tier"] = string(memind.TierBranch)
 		result[i] = p
 	}
 	return result
@@ -39,7 +39,7 @@ func (n *EvidenceNormalizer) NormalizeRootPoints(points []memind.InsightPoint, b
 		if p.Metadata == nil {
 			p.Metadata = make(map[string]string)
 		}
-		p.Metadata["tier"] = "ROOT"
+		p.Metadata["tier"] = string(memind.TierRoot)
 		result[i] = p
 	}
 	return result

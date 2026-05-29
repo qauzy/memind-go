@@ -86,10 +86,11 @@
 
 你说：「我喜欢吃披萨」
 
-系统做了三件事：
+系统做了四件事：
 1. **存原文** → `MemoryRawData`
 2. **提条目** → `MemoryItem`（内容="我喜欢吃披萨"，分类=BEHAVIOR）
-3. **生洞察** → `MemoryInsight`（Tier=LEAF，类型=preferences）
+3. **按主题分组** → 同类型条目由 LLM 按语义聚类（InsightGroupPrompts），例如多条 preferences 条目会被分到"食物偏好"、"天气偏好"等子组
+4. **每组生洞察** → `MemoryInsight`（Tier=LEAF，类型=preferences，名称=分组名）— 每组内的多条条目一起合成，而非每条单独生成
 
 ### 第 2 步：挂树 — 把叶子挂到树枝上
 
@@ -332,16 +333,25 @@ AddMessage → 缓冲区 → Commit → Extract()
                                     │
                                     ├─ RawData → Item (分类)
                                     │
-                                    └─ → LEAF 洞察
+                                    └─ → 按类型收集条目
                                          │
-                                         ▼
-                                    OnLeafsUpdated()
+                                         ├─ [有 LLM] groupItemsForType — 语义分组（InsightGroupPrompts）
+                                         │     每个分组内 generateLeafInsights — 多条目合成 LEAF（InsightLeafPrompts）
+                                         │     SUMMARY="整合多源事实"，REASONING="推导隐含结论"
                                          │
-                                         ├─ Bubble 计数
-                                         ├─ 创建/链接 BRANCH
-                                         ├─ 链接 ROOT
-                                         ├─ [阈值达标] BRANCH 重摘要（LLM 三层回退）
-                                         └─ [阈值达标] ROOT 异步重摘要（goroutine）
+                                         └─ [无 LLM] 每一条目生成单点摘要
+                                              │
+                                              ▼
+                                         LEAF 洞察
+                                              │
+                                              ▼
+                                         OnLeafsUpdated()
+                                              │
+                                              ├─ Bubble 计数
+                                              ├─ 创建/链接 BRANCH
+                                              ├─ 链接 ROOT
+                                              ├─ [阈值达标] BRANCH 重摘要（LLM 三层回退）
+                                              └─ [阈值达标] ROOT 异步重摘要（goroutine）
 ```
 
 ---
@@ -403,7 +413,8 @@ store.Insights().GetRootByType(memoryID, "profile")       // 查某个类型的 
 
 第 6 步：【读代码】按调用链
   → engine/memory.go:58 → Extract()
-  → extraction/extractor.go:52 → extractInsights()
+  → extraction/extractor.go:54 → Extract() → extractInsights()
+  → （内部：groupItemsForType at :595 → generateLeafInsights at :650）
   → insight/reorganizer.go:63 → OnLeafsUpdated()
   → insight/reorganizer.go:256 → resummarizeBranch()
   → insight/reorganizer.go:457 → resummarizeRoot()
@@ -425,42 +436,66 @@ store.Insights().GetRootByType(memoryID, "profile")       // 查某个类型的 
 ## 附录：分类到底怎么算的（代码溯源）
 
 ### 核心结论
+/opt/code/memind-go/extraction/extractor.go:43
+分类走**两路策略**：
 
-- 当前 Go 版本的 `BEHAVIOR` 不是靠语义理解"喜欢=偏好"判断出来的，而是**哈希分桶**。
-- 对 `"我喜欢吃披萨"` 来说，`simpleHash` 得到十六进制以 `a` 开头，`'a'=97`，`97 % 3 = 1`，所以落到 `UserCategories()[1] = BEHAVIOR`。
+| 路径 | 怎么分 | 效果 |
+|------|--------|------|
+| **LLM 语义（首选）** | LLM 根据决策表 + 正反例判断 | 精准：「披萨→BEHAVIOR」「周五下雨→EVENT」 |
+| **哈希分桶（回退）** | `simpleHash(caption) % len(categories)` | 均匀但无语义 |
+
+- 有 LLM 时（配置了 `SlotItemExtraction`）：用 Java 移植的 `MemoryItemUnifiedPrompts`，LLM 同时给出 category 和 insightTypes
+- 无 LLM 时：哈希分桶，对 `"我喜欢吃披萨"`，`simpleHash` 首字节 `'a'=97`，`97 % 3 = 1` → `UserCategories()[1] = BEHAVIOR`
 
 ### 代码链路
 
-```
+
 提取入口
-  └─ extractor.go:51   Extract() → extractRawData → extractItems → extractInsights
+  └─ [/extraction/extractor.go:54](/extraction/extractor.go#L54)  `Extract()` → extractRawData → extractItems → extractInsights
 
 原文封装
-  └─ extractor.go:141  MemoryRawData{ Caption: "我喜欢吃披萨" }
+  └─ [/extraction/extractor.go:159](/extraction/extractor.go#L159)  `MemoryRawData{ Caption: "我喜欢吃披萨" }`
 
-分类（纯哈希，不看语义）
-  └─ models.go:42     UserCategories() = [PROFILE, BEHAVIOR, EVENT]
-  └─ extractor.go:198  simpleHash(caption)[0] % len(categories)
+分类（两路）：
+  │
+  ├─ [有 LLM] [/extraction/extractor.go:221](/extraction/extractor.go#L221)  `extractItemsWithLLM()`
+  │     └─ [/extraction/item_extraction_prompts.go:10](/extraction/item_extraction_prompts.go#L10)  MemoryItemUnifiedPrompts（决策表 + 正反例）
+  │     └─ 输出：{content, category=BEHAVIOR, insightTypes=[preferences]}
+  │
+  └─ [无 LLM] [/extraction/extractor.go:353](/extraction/extractor.go#L353)  `extractItemsHash()`
+        └─ [/models.go:42](/models.go#L42)  `UserCategories() = [PROFILE, BEHAVIOR, EVENT]`
+        └─ [/extraction/extractor.go:383](/extraction/extractor.go#L383)  `simpleHash(caption)[0] % len(categories)`
 
 Item 写入
-  └─ extractor.go:216  MemoryItem{ Category: BEHAVIOR }
+  └─ [/extraction/extractor.go:305](/extraction/extractor.go#L305)  `MemoryItem{ Category: BEHAVIOR, Metadata: {insightTypes: [preferences]} }`
 
 匹配洞察类型
-  └─ inmemory.go:234   preferences.Categories = ["BEHAVIOR"]
-  └─ extractor.go:295  typeMatchesCategory(item.Category, insightType)
-  └─ extractor.go:376  逐项比较 Categories 列表
+  └─ [/extraction/extractor.go:556](/extraction/extractor.go#L556)  `resolveItemInsightTypes()` — 优先读 Metadata.insightTypes（LLM 语义），
+  └─ 回退 typeMatchesCategory(item.Category, insightType) 逐项匹配
 
-生成 LEAF
-  └─ extractor.go:310  MemoryInsight{ Type: "preferences", Tier: LEAF }
+生成 LEAF（分组合成流程）
+  └─ [/extraction/extractor.go:448](/extraction/extractor.go#L448)  `extractInsights()` → 按类型收集条目
+       │
+       ├─ [有 LLM] [/extraction/extractor.go:595](/extraction/extractor.go#L595)  `groupItemsForType()` — InsightGroupPrompts 语义分组
+       │     └─ [/extraction/extractor.go:650](/extraction/extractor.go#L650)  `generateLeafInsights()` — InsightLeafPrompts 多条目合成
+       │           输出：SUMMARY（整合多源）/ REASONING（推导隐含）
+       │
+       └─ [无 LLM] 每条目生成单点摘要
+            └─ `MemoryInsight{ Type: "preferences", Name: 分组名, Tier: LEAF }`
 
 ROOT 更新
-  └─ engine/memory.go:71   Extract() → OnLeafsUpdated()
-  └─ config.go:254         阈值: BranchBubbleThreshold=3, RootBubbleThreshold=2
-```
+  └─ [/engine/memory.go:71](/engine/memory.go#L71)  `Extract()` → `OnLeafsUpdated()`
+  └─ [/config.go:254](/config.go#L254)  阈值: BranchBubbleThreshold=3, RootBubbleThreshold=2
 
-### 为什么原版 Java 不同
 
-原版用 LLM 做语义分类（见 `MemoryItemUnifiedPrompts.java`），通过决策表、类别定义、正反例让 LLM 判断每条内容的 category 和 insightTypes。Go 版为简化去掉了这步 LLM 调用，改用哈希——**功能正常，但分类无语义意义**。
+### 相比原版 Java
+
+Go 版已从 Java 移植了：
+- **语义分类**：`MemoryItemUnifiedPrompts.java` → `item_extraction_prompts.go`（决策表、正反例、LLM 判断 category/insightTypes）
+- **语义分组**：`InsightGroupPrompts.java` → `insight_group_prompts.go`（多条目语义聚类，命名空间稳定性）
+- **多条目合成**：`InsightLeafPrompts.java` → `insight_leaf_prompts.go`（每组内 SUMMARY/REASONING 合成，拒绝单条目重复）
+
+哈希路径仅作为 LLM 不可用时的回退。
 
 ---
 

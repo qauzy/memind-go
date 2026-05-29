@@ -5,6 +5,7 @@ import (
 	"github.com/openmemind/memind-go/llm"
 	"log"
 	"os"
+	"time"
 
 	"github.com/openmemind/memind-go/engine"
 	"github.com/openmemind/memind-go/server"
@@ -15,12 +16,12 @@ import (
 func main() {
 	addr := flag.String("addr", ":8018", "server listen address")
 	dsn := flag.String("dsn", "parallels:rank%Io1@tcp(192.168.199.97:3306)/memind?charset=utf8mb4&parseTime=True&loc=Local", "MySQL DSN")
-	apiKey := flag.String("api-key", "sk-vqlsPCwiB4zKNe6CkWqIiM6yl3BnEFiPe79sdeG2eFbjMqZ5FH6CT43Q4zSD9ipw", "OpenAI API key")
-	baseURL := flag.String("base-url", "https://opencode.ai/zen/v1", "OpenAI compatible API base URL")
-	model := flag.String("model", "deepseek-v4-flash-free", "LLM model name")
+	apiKey := flag.String("api-key", "sk-api-b0Eox4bjZytSm34T8wuPc5xZ5QDwnPadNAC7MC_ugwWcTpfkmjPTId21p-pFWPDnAnpAOULdTDRaDGhe9DpmkimXl6DOkeV_Efl7XMqbFWnfqYbFYEs3UUI", "OpenAI API key")
+	baseURL := flag.String("base-url", "https://api.minimaxi.com/v1", "OpenAI compatible API base URL")
+	model := flag.String("model", "MiniMax-M2.7", "LLM model name")
 	embedModel := flag.String("embed-model", "embo-01", "Embedding model name (e.g. text-embedding-3-small, nvidia/llama-3.2-nv-embedqa-1b-v2)")
-	embedBaseURL := flag.String("embed-base-url", "https://api.minimax.io/v1", "Embedding API base URL (default: same as --base-url)")
-	embedKey := flag.String("embed-key", "sk-vqlsPCwiB4zKNe6CkWqIiM6yl3BnEFiPe79sdeG2eFbjMqZ5FH6CT43Q4zSD9ipw", "OpenAI API key")
+	embedBaseURL := flag.String("embed-base-url", "https://api.minimaxi.com/v1", "Embedding API base URL (default: same as --base-url)")
+	embedKey := flag.String("embed-key", "sk-api-b0Eox4bjZytSm34T8wuPc5xZ5QDwnPadNAC7MC_ugwWcTpfkmjPTId21p-pFWPDnAnpAOULdTDRaDGhe9DpmkimXl6DOkeV_Efl7XMqbFWnfqYbFYEs3UUI", "OpenAI API key")
 	flag.Parse()
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
@@ -59,6 +60,7 @@ func main() {
 		client := llm.NewOpenAIClient(*apiKey,
 			llm.WithBaseURL(*baseURL),
 			llm.WithModel(*model),
+			llm.WithTimeout(300*time.Second),
 		)
 		builder.ChatClientForSlot(llm.SlotItemExtraction, client)
 		builder.ChatClientForSlot(llm.SlotInsightGenerator, client)

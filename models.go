@@ -6,37 +6,37 @@ import "time"
 type Role string
 
 const (
-	RoleUser      Role = "USER"
-	RoleAssistant Role = "ASSISTANT"
+	RoleUser      Role = "user"
+	RoleAssistant Role = "assistant"
 )
 
 // Strategy - 检索策略类型
 type Strategy string
 
 const (
-	StrategySimple Strategy = "SIMPLE"
-	StrategyDeep   Strategy = "DEEP"
+	StrategySimple Strategy = "simple"
+	StrategyDeep   Strategy = "deep"
 )
 
 // MemoryScope - 记忆作用域：USER=用户侧 / AGENT=Agent 侧
 type MemoryScope string
 
 const (
-	ScopeUser  MemoryScope = "USER"
-	ScopeAgent MemoryScope = "AGENT"
+	ScopeUser  MemoryScope = "user"
+	ScopeAgent MemoryScope = "agent"
 )
 
 // MemoryCategory - 记忆分类
 type MemoryCategory string
 
 const (
-	CategoryProfile    MemoryCategory = "PROFILE"
-	CategoryBehavior   MemoryCategory = "BEHAVIOR"
-	CategoryEvent      MemoryCategory = "EVENT"
-	CategoryTool       MemoryCategory = "TOOL"
-	CategoryDirective  MemoryCategory = "DIRECTIVE"
-	CategoryPlaybook   MemoryCategory = "PLAYBOOK"
-	CategoryResolution MemoryCategory = "RESOLUTION"
+	CategoryProfile    MemoryCategory = "profile"
+	CategoryBehavior   MemoryCategory = "behavior"
+	CategoryEvent      MemoryCategory = "event"
+	CategoryTool       MemoryCategory = "tool"
+	CategoryDirective  MemoryCategory = "directive"
+	CategoryPlaybook   MemoryCategory = "playbook"
+	CategoryResolution MemoryCategory = "resolution"
 )
 
 // UserCategories - 返回 USER 作用域下的记忆分类列表
@@ -53,60 +53,60 @@ func AgentCategories() []MemoryCategory {
 type MemoryItemType string
 
 const (
-	ItemTypeFact      MemoryItemType = "FACT"
-	ItemTypeForesight MemoryItemType = "FORESIGHT"
+	ItemTypeFact      MemoryItemType = "fact"
+	ItemTypeForesight MemoryItemType = "foresight"
 )
 
 // InsightTier - 洞察树层级
 type InsightTier string
 
 const (
-	TierLeaf   InsightTier = "LEAF"
-	TierBranch InsightTier = "BRANCH"
-	TierRoot   InsightTier = "ROOT"
+	TierLeaf   InsightTier = "leaf"
+	TierBranch InsightTier = "branch"
+	TierRoot   InsightTier = "root"
 )
 
 // InsightAnalysisMode - 洞察类型分析模式
 type InsightAnalysisMode string
 
 const (
-	AnalysisModeBranch InsightAnalysisMode = "BRANCH"
-	AnalysisModeRoot   InsightAnalysisMode = "ROOT"
+	AnalysisModeBranch InsightAnalysisMode = "branch"
+	AnalysisModeRoot   InsightAnalysisMode = "root"
 )
 
 // PointType - 洞察点类型
 type PointType string
 
 const (
-	PointTypeSummary   PointType = "SUMMARY"
-	PointTypeReasoning PointType = "REASONING"
+	PointTypeSummary   PointType = "summary"
+	PointTypeReasoning PointType = "reasoning"
 )
 
 // OpType - 洞察点操作类型
 type OpType string
 
 const (
-	OpAdd    OpType = "ADD"
-	OpUpdate OpType = "UPDATE"
-	OpDelete OpType = "DELETE"
+	OpAdd    OpType = "add"
+	OpUpdate OpType = "update"
+	OpDelete OpType = "delete"
 )
 
 // ExtractionStatus - 提取结果状态
 type ExtractionStatus string
 
 const (
-	ExtractionSuccess        ExtractionStatus = "SUCCESS"
-	ExtractionPartialSuccess ExtractionStatus = "PARTIAL_SUCCESS"
-	ExtractionFailed         ExtractionStatus = "FAILED"
+	ExtractionSuccess        ExtractionStatus = "success"
+	ExtractionPartialSuccess ExtractionStatus = "partial_success"
+	ExtractionFailed         ExtractionStatus = "failed"
 )
 
 // RetrievalStatus - 检索结果状态
 type RetrievalStatus string
 
 const (
-	RetrievalSuccess  RetrievalStatus = "SUCCESS"
-	RetrievalEmpty    RetrievalStatus = "EMPTY"
-	RetrievalDegraded RetrievalStatus = "DEGRADED"
+	RetrievalSuccess  RetrievalStatus = "success"
+	RetrievalEmpty    RetrievalStatus = "empty"
+	RetrievalDegraded RetrievalStatus = "degraded"
 )
 
 // MemoryId - 记忆唯一标识，由 userId 和可选 agentId 组成

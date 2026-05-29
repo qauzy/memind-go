@@ -4,9 +4,9 @@ package llm
 type ChatRole string
 
 const (
-	RoleSystem    ChatRole = "SYSTEM"
-	RoleUser      ChatRole = "USER"
-	RoleAssistant ChatRole = "ASSISTANT"
+	RoleSystem    ChatRole = "system"
+	RoleUser      ChatRole = "user"
+	RoleAssistant ChatRole = "assistant"
 )
 
 // ChatMessage - LLM 单条消息

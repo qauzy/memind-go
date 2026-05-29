@@ -230,16 +230,16 @@ func newInMemInsightOps() *inMemInsightOps {
 func defaultInsightTypes() []*memind.MemoryInsightType {
 	now := time.Now()
 	types := []*memind.MemoryInsightType{
-		{Name: "identity", Scope: memind.ScopeUser, Categories: []string{"PROFILE"}, TargetTokens: 300, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
-		{Name: "preferences", Scope: memind.ScopeUser, Categories: []string{"PROFILE"}, TargetTokens: 300, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
-		{Name: "relationships", Scope: memind.ScopeUser, Categories: []string{"PROFILE"}, TargetTokens: 300, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
-		{Name: "experiences", Scope: memind.ScopeUser, Categories: []string{"EVENT"}, TargetTokens: 400, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
-		{Name: "behavior", Scope: memind.ScopeUser, Categories: []string{"BEHAVIOR"}, TargetTokens: 300, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
-		{Name: "directives", Scope: memind.ScopeAgent, Categories: []string{"DIRECTIVE"}, TargetTokens: 400, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
-		{Name: "playbooks", Scope: memind.ScopeAgent, Categories: []string{"PLAYBOOK"}, TargetTokens: 500, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
-		{Name: "resolutions", Scope: memind.ScopeAgent, Categories: []string{"RESOLUTION"}, TargetTokens: 400, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
-		{Name: "profile", Scope: memind.ScopeUser, Categories: []string{"PROFILE", "BEHAVIOR", "EVENT"}, TargetTokens: 800, AnalysisMode: memind.AnalysisModeRoot, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
-		{Name: "interaction", Scope: memind.ScopeAgent, Categories: []string{"TOOL", "DIRECTIVE", "PLAYBOOK", "RESOLUTION"}, TargetTokens: 800, AnalysisMode: memind.AnalysisModeRoot, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+		{Name: "identity", Scope: memind.ScopeUser, Categories: []string{"profile"}, TargetTokens: 300, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+		{Name: "preferences", Scope: memind.ScopeUser, Categories: []string{"profile"}, TargetTokens: 300, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+		{Name: "relationships", Scope: memind.ScopeUser, Categories: []string{"profile"}, TargetTokens: 300, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+		{Name: "experiences", Scope: memind.ScopeUser, Categories: []string{"event"}, TargetTokens: 400, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+		{Name: "behavior", Scope: memind.ScopeUser, Categories: []string{"behavior"}, TargetTokens: 300, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+		{Name: "directives", Scope: memind.ScopeAgent, Categories: []string{"directive"}, TargetTokens: 400, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+		{Name: "playbooks", Scope: memind.ScopeAgent, Categories: []string{"playbook"}, TargetTokens: 500, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+		{Name: "resolutions", Scope: memind.ScopeAgent, Categories: []string{"resolution"}, TargetTokens: 400, AnalysisMode: memind.AnalysisModeBranch, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+		{Name: "profile", Scope: memind.ScopeUser, Categories: []string{"profile", "behavior", "event"}, TargetTokens: 800, AnalysisMode: memind.AnalysisModeRoot, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
+		{Name: "interaction", Scope: memind.ScopeAgent, Categories: []string{"tool", "directive", "playbook", "resolution"}, TargetTokens: 800, AnalysisMode: memind.AnalysisModeRoot, LastUpdatedAt: now, CreatedAt: now, UpdatedAt: now},
 	}
 	for _, t := range types {
 		if t.ID == 0 {
