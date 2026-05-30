@@ -152,7 +152,7 @@ func (m *memoryImpl) Commit(memoryID memind.MemoryId, config memind.ExtractionCo
 	})
 }
 
-// rebuildIndexes - 从持久化存储重建 BM25 索引
+// rebuildIndexes - 从持久化存储重建 BM25 索引和向量索引
 func (m *memoryImpl) rebuildIndexes(memoryID memind.MemoryId) {
 	m.rebuildMu.Lock()
 	if m.rebuilt[memoryID] {
@@ -162,24 +162,66 @@ func (m *memoryImpl) rebuildIndexes(memoryID memind.MemoryId) {
 	m.rebuilt[memoryID] = true
 	m.rebuildMu.Unlock()
 
-	log.Printf("[rebuildIndexes] rebuilding BM25 for %s", memoryID.Identifier())
+	log.Printf("[rebuildIndexes] rebuilding indexes for %s", memoryID.Identifier())
 
-	items, err := m.memStore.Items().ListItems(memoryID)
-	if err == nil {
+	// BM25 索引
+	items, itemsErr := m.memStore.Items().ListItems(memoryID)
+	if itemsErr == nil {
 		for _, item := range items {
 			docID := fmt.Sprintf("item-%d", item.ID)
 			m.textSearch.Index(memoryID, docID, item.Content, tsearch.TargetItem)
 		}
-		log.Printf("[rebuildIndexes] indexed %d items", len(items))
+		log.Printf("[rebuildIndexes] indexed %d items (text)", len(items))
 	}
 
-	insights, err := m.memStore.Insights().ListInsights(memoryID)
-	if err == nil {
+	insights, insightsErr := m.memStore.Insights().ListInsights(memoryID)
+	if insightsErr == nil {
 		for _, ins := range insights {
 			docID := fmt.Sprintf("insight-%d", ins.ID)
 			m.textSearch.Index(memoryID, docID, ins.PointsContent(), tsearch.TargetInsight)
 		}
-		log.Printf("[rebuildIndexes] indexed %d insights", len(insights))
+		log.Printf("[rebuildIndexes] indexed %d insights (text)", len(insights))
+	}
+
+	// 向量索引（批量写入，一次 API 调用完成全部 embedding）
+	if m.vecStore != nil {
+		if itemsErr == nil {
+			itemTexts := make([]string, 0, len(items))
+			itemMetas := make([]map[string]any, 0, len(items))
+			for _, item := range items {
+				categories := make([]string, 0)
+				if item.Category != "" {
+					categories = append(categories, string(item.Category))
+				}
+				itemTexts = append(itemTexts, item.Content)
+				itemMetas = append(itemMetas, map[string]any{
+					"type": "item", "item_id": item.ID, "categories": categories,
+				})
+			}
+			itemIDs, err2 := m.vecStore.StoreBatch(memoryID, itemTexts, itemMetas)
+			if err2 == nil {
+				log.Printf("[rebuildIndexes] stored %d item vectors", len(itemIDs))
+			} else {
+				log.Printf("[rebuildIndexes] item vector batch error: %v", err2)
+			}
+		}
+
+		if insightsErr == nil {
+			insightTexts := make([]string, 0, len(insights))
+			insightMetas := make([]map[string]any, 0, len(insights))
+			for _, ins := range insights {
+				insightTexts = append(insightTexts, ins.PointsContent())
+				insightMetas = append(insightMetas, map[string]any{
+					"type": "insight", "insight_id": ins.ID,
+				})
+			}
+			insightIDs, err2 := m.vecStore.StoreBatch(memoryID, insightTexts, insightMetas)
+			if err2 == nil {
+				log.Printf("[rebuildIndexes] stored %d insight vectors", len(insightIDs))
+			} else {
+				log.Printf("[rebuildIndexes] insight vector batch error: %v", err2)
+			}
+		}
 	}
 }
 

@@ -59,8 +59,13 @@ func (s *InMemoryVectorStore) Embed(text string) ([]float32, error) {
 	return hashEmbed(text, 128), nil
 }
 
-// EmbedAll - 批量计算嵌入向量
+// EmbedAll - 批量计算嵌入向量，有外部客户端时走 API，否则逐条 hashEmbed
 func (s *InMemoryVectorStore) EmbedAll(texts []string) ([][]float32, error) {
+	if s.embeddingClient != nil {
+		if _, ok := s.embeddingClient.(*llm.NoOpEmbeddingClient); !ok {
+			return s.embeddingClient.EmbedAll(texts)
+		}
+	}
 	result := make([][]float32, len(texts))
 	for i, t := range texts {
 		result[i] = hashEmbed(t, 128)
@@ -118,19 +123,38 @@ func (s *InMemoryVectorStore) StoreWithID(memoryID memind.MemoryId, vectorID str
 	return nil
 }
 
-// StoreBatch - 批量存储文本向量
+// StoreBatch - 批量存储文本向量（一次 API 调用完成全部 embedding）
 func (s *InMemoryVectorStore) StoreBatch(memoryID memind.MemoryId, texts []string, metadatas []map[string]any) ([]string, error) {
+	if len(texts) == 0 {
+		return nil, nil
+	}
+
+	embeddings, err := s.EmbedAll(texts)
+	if err != nil {
+		return nil, fmt.Errorf("batch embed %d texts: %w", len(texts), err)
+	}
+
 	ids := make([]string, len(texts))
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.vectors[memoryID] == nil {
+		s.vectors[memoryID] = make(map[string]*vectorEntry)
+	}
 	for i, text := range texts {
+		vectorID := fmt.Sprintf("vec_%d_%d", time.Now().UnixNano(), i)
 		var meta map[string]any
 		if i < len(metadatas) {
 			meta = metadatas[i]
 		}
-		id, err := s.Store(memoryID, text, meta)
-		if err != nil {
-			return nil, err
+		entry := &vectorEntry{
+			VectorID:  vectorID,
+			Text:      text,
+			Embedding: embeddings[i],
+			CreatedAt: time.Now(),
+			Metadata:  meta,
 		}
-		ids[i] = id
+		s.vectors[memoryID][vectorID] = entry
+		ids[i] = vectorID
 	}
 	return ids, nil
 }

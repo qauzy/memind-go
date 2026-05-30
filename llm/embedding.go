@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -19,9 +20,15 @@ type OpenAIEmbeddingClient struct {
 	httpClient *http.Client
 
 	// 用于适配非标准 API（如 MiniMax）
-	inputField string // 请求中文本字段名，默认 "input"，MiniMax 为 "texts"
-	dataField  string // 响应中数据字段名，默认 "data"，MiniMax 为 "vectors"
-	errorField string // 响应中错误消息字段路径，默认 "error.message"，MiniMax 为 "base_resp"
+	inputField  string         // 请求中文本字段名，默认 "input"，MiniMax 为 "texts"
+	dataField   string         // 响应中数据字段名，默认 "data"，MiniMax 为 "vectors"
+	errorField  string         // 响应中错误消息字段路径，默认 "error.message"，MiniMax 为 "base_resp"
+	extraFields map[string]any // 额外请求字段（如 MiniMax 的 "type"）
+
+	// 限流
+	rateLimitMu sync.Mutex
+	lastRequest time.Time
+	minInterval time.Duration // 两次 API 调用之间的最小间隔
 }
 
 // OpenAIEmbeddingOption - 嵌入客户端配置选项
@@ -56,11 +63,13 @@ func NewOpenAIEmbeddingClient(apiKey string, opts ...OpenAIEmbeddingOption) *Ope
 	for _, opt := range opts {
 		opt(c)
 	}
-	// MiniMax 自动适配
+	// MiniMax 自动适配：改用 texts/vectors，补充必填 type 字段，限流 1.2s/次
 	if strings.Contains(c.baseURL, "minimaxi") {
 		c.inputField = "texts"
 		c.dataField = "vectors"
 		c.errorField = "base_resp"
+		c.extraFields = map[string]any{"type": "db"}
+		c.minInterval = 1200 * time.Millisecond
 	}
 	return c
 }
@@ -97,11 +106,16 @@ func (c *OpenAIEmbeddingClient) EmbedAll(texts []string) ([][]float32, error) {
 		"model":      c.model,
 		c.inputField: input,
 	}
+	for k, v := range c.extraFields {
+		body[k] = v
+	}
 
 	jsonBody, err := json.Marshal(body)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
+
+	c.throttle()
 
 	req, err := http.NewRequest("POST", c.baseURL+"/embeddings", bytes.NewReader(jsonBody))
 	if err != nil {
@@ -184,4 +198,20 @@ func (c *OpenAIEmbeddingClient) EmbedAll(texts []string) ([][]float32, error) {
 	}
 
 	return results, nil
+}
+
+// throttle - MiniMax 限流：确保相邻 API 调用间隔 >= minInterval
+func (c *OpenAIEmbeddingClient) throttle() {
+	if c.minInterval <= 0 {
+		return
+	}
+	c.rateLimitMu.Lock()
+	defer c.rateLimitMu.Unlock()
+	elapsed := time.Since(c.lastRequest)
+	if elapsed < c.minInterval {
+		sleep := c.minInterval - elapsed
+		log.Printf("[throttle] sleeping %.0fms before next embedding API call", sleep.Seconds()*1000)
+		time.Sleep(sleep)
+	}
+	c.lastRequest = time.Now()
 }

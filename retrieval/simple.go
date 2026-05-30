@@ -210,9 +210,20 @@ func (s *SimpleStrategy) searchItemsVector(memoryID memind.MemoryId, query strin
 				continue
 			}
 		}
+		sourceID := vr.VectorID
+		if vr.Metadata != nil {
+			if id, ok := vr.Metadata["item_id"]; ok {
+				switch v := id.(type) {
+				case int64:
+					sourceID = fmt.Sprintf("item-%d", v)
+				case float64:
+					sourceID = fmt.Sprintf("item-%.0f", v)
+				}
+			}
+		}
 		results = append(results, ScoredResult{
 			SourceType:  "ITEM",
-			SourceID:    vr.VectorID,
+			SourceID:    sourceID,
 			Text:        vr.Text,
 			VectorScore: vr.Score,
 			FinalScore:  float64(vr.Score),
