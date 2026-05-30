@@ -138,16 +138,20 @@ func (s *SimpleStrategy) searchInsights(memoryID memind.MemoryId, query string, 
 
 	vecResults, err := s.vecStore.SearchWithFilter(memoryID, query, cfg.TopK*2, cfg.MinScore, map[string]any{"type": "insight"})
 	if err != nil {
+		log.Printf("[searchInsights] SearchWithFilter error: %v", err)
 		return nil, err
 	}
+	log.Printf("[searchInsights] vecResults count=%d cfg.MinScore=%.2f cfg.TopK=%d", len(vecResults), cfg.MinScore, cfg.TopK)
 
 	insightMap := make(map[int64]*memind.MemoryInsight)
 	for _, ins := range insights {
 		insightMap[ins.ID] = ins
 	}
+	log.Printf("[searchInsights] total insights in store: %d", len(insightMap))
 
 	var results []ScoredResult
 	for _, vr := range vecResults {
+		log.Printf("[searchInsights] vecResult score=%.6f vectorID=%s text=%q", vr.Score, vr.VectorID, vr.Text[:min(len(vr.Text), 60)])
 		id, found := extractInsightID(vr.Metadata)
 		text := vr.Text
 		sourceID := vr.VectorID
@@ -165,6 +169,7 @@ func (s *SimpleStrategy) searchInsights(memoryID memind.MemoryId, query string, 
 			FinalScore:  float64(vr.Score),
 		})
 	}
+	log.Printf("[searchInsights] returning %d results", len(results))
 	return results, nil
 }
 

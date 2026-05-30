@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
+	"log"
 	"math"
 	"sort"
 	"strings"
@@ -50,9 +51,11 @@ func (s *InMemoryVectorStore) SetEmbeddingClient(client llm.EmbeddingClient) {
 func (s *InMemoryVectorStore) Embed(text string) ([]float32, error) {
 	if s.embeddingClient != nil {
 		if _, ok := s.embeddingClient.(*llm.NoOpEmbeddingClient); !ok {
+			log.Printf("[Embed] using external embedding client")
 			return s.embeddingClient.Embed(text)
 		}
 	}
+	log.Printf("[Embed] using hashEmbed fallback")
 	return hashEmbed(text, 128), nil
 }
 
