@@ -91,7 +91,9 @@ func MergeByRRF(results [][]ScoredResult, k int, vectorWeight, keywordWeight flo
 				seen[key] = true
 			}
 			scores[key] += weight / float64(k+rank+1)
-			vecScores[key] = result.VectorScore
+			if result.VectorScore > 0 {
+				vecScores[key] = result.VectorScore
+			}
 			texts[key] = result.Text
 			items[key] = result
 		}

@@ -247,7 +247,7 @@ func (e *DefaultExtractor) extractItemsWithLLM(memoryID memind.MemoryId, rawResu
 		{Role: llm.RoleUser, Content: fmt.Sprintf(itemExtractionUserPrompt, conversation)},
 	}, &resp)
 	if err != nil {
-		log.Printf("[extractItemsWithLLM] LLM CallStructured error: %v", err)
+		log.Printf("[extractItemsWithLLM] LLM CallStructured conversation \n%v\n error: %v", conversation, err)
 		return nil, fmt.Errorf("llm item extraction: %w", err)
 	}
 
@@ -477,19 +477,26 @@ func (e *DefaultExtractor) extractInsights(memoryID memind.MemoryId, itemResult 
 
 	for typeName, items := range typeItems {
 		t := typeMap[typeName]
+		log.Printf("[extractInsights] type=%s items=%d", typeName, len(items))
 
 		var generatedInsights []*memind.MemoryInsight
 
 		if hasLLM {
 			// LLM 路径：分组 → 每组合成 LEAF（更新已有或新建）
+			log.Printf("[extractInsights] type=%s grouping...", typeName)
 			groups := e.groupItemsForType(llmClient, items, t, cfg.Language)
 			for groupName, groupItems := range groups {
 				if groupName == "UNRELATED" {
 					continue
 				}
+				log.Printf("[extractInsights] type=%s group=%s items=%d generating leaf...", typeName, groupName, len(groupItems))
 				// 查找是否已有该分组的 LEAF
 				existingLeaf, _ := e.memStore.Insights().GetLeafByGroup(memoryID, t.Name, groupName)
-				points := e.generateLeafInsights(llmClient, groupItems, t, groupName, cfg.Language)
+				var existingPoints []memind.InsightPoint
+				if existingLeaf != nil {
+					existingPoints = existingLeaf.Points
+				}
+				points := e.generateLeafInsights(llmClient, groupItems, t, groupName, cfg.Language, existingPoints)
 				if len(points) == 0 {
 					continue
 				}
@@ -675,14 +682,13 @@ func (e *DefaultExtractor) groupItemsForType(client llm.StructuredChatClient, it
 //
 // 输入同一分组的多个条目，LLM 多条目合成（SUMMARY/REASONING），
 // 无 LLM 时回退为每条目单点摘要。
-func (e *DefaultExtractor) generateLeafInsights(client llm.StructuredChatClient, items []*memind.MemoryItem, typeDef memind.MemoryInsightType, groupName, language string) []memind.InsightPoint {
+func (e *DefaultExtractor) generateLeafInsights(client llm.StructuredChatClient, items []*memind.MemoryItem, typeDef memind.MemoryInsightType, groupName, language string, existingPoints []memind.InsightPoint) []memind.InsightPoint {
 	hasLLM := false
 	if _, ok := client.(*llm.NoOpChatClient); !ok {
 		hasLLM = true
 	}
 
 	if hasLLM {
-		// 构造 LLM 上下文：列出分组内所有条目
 		var itemList string
 		for i, item := range items {
 			itemList += fmt.Sprintf("[item %d] %s\n", item.ID, item.Content)
@@ -691,12 +697,38 @@ func (e *DefaultExtractor) generateLeafInsights(client llm.StructuredChatClient,
 			}
 		}
 
+		languageSuffix := ""
+		if language != "" {
+			languageSuffix = fmt.Sprintf("\n\nIMPORTANT: Output in language: %s.", language)
+		}
+
+		if len(existingPoints) > 0 {
+			// 增量操作路径：已有 LEAF 点，请求 LLM 生成 ADD/UPDATE/DELETE 操作
+			var existingText string
+			for i, p := range existingPoints {
+				existingText += fmt.Sprintf("[point %d] id=%s type=%s content=%s sourceItemIds=%v\n", i, p.PointID, p.Type, p.Content, p.SourceItemIDs)
+			}
+
+			sysPrompt := strings.ReplaceAll(InsightLeafOpsSystemPrompt, "{{insight_type}}", typeDef.Name)
+			sysPrompt = strings.ReplaceAll(sysPrompt, "{{insight_description}}", typeDef.Description)
+			sysPrompt = strings.ReplaceAll(sysPrompt, "{{group_name}}", groupName)
+			sysPrompt += languageSuffix
+
+			var resp insightLeafOpsResponse
+			err := client.CallStructured([]llm.ChatMessage{
+				{Role: llm.RoleSystem, Content: sysPrompt},
+				{Role: llm.RoleUser, Content: fmt.Sprintf("Existing insight points:\n\n%s\n\nNew memory items to incorporate:\n\n%s", existingText, itemList)},
+			}, &resp)
+			if err == nil && len(resp.Operations) > 0 {
+				return applyPointOps(existingPoints, resp.Operations)
+			}
+		}
+
+		// 全量重写路径：无 LEAF 点或增量操作失败
 		sysPrompt := strings.ReplaceAll(InsightLeafSystemPrompt, "{{insight_type}}", typeDef.Name)
 		sysPrompt = strings.ReplaceAll(sysPrompt, "{{insight_description}}", typeDef.Description)
 		sysPrompt = strings.ReplaceAll(sysPrompt, "{{group_name}}", groupName)
-		if language != "" {
-			sysPrompt += fmt.Sprintf("\n\nIMPORTANT: Output in language: %s.", language)
-		}
+		sysPrompt += languageSuffix
 
 		var resp insightLeafResponse
 		err := client.CallStructured([]llm.ChatMessage{
@@ -792,6 +824,74 @@ type insightLeafPoint struct {
 // insightLeafResponse - 洞察叶子节点 LLM 响应
 type insightLeafResponse struct {
 	Points []insightLeafPoint `json:"points"`
+}
+
+// insightLeafOpsResponse - 增量点操作 LLM 响应
+type insightLeafOpsResponse struct {
+	Operations []insightLeafOp `json:"operations"`
+}
+
+type insightLeafOp struct {
+	Op            string   `json:"op"`
+	PointID       string   `json:"pointId"`
+	Content       string   `json:"content"`
+	Type          string   `json:"type"`
+	SourceItemIDs []string `json:"sourceItemIds"`
+	PointReason   string   `json:"point_reason,omitempty"`
+}
+
+// applyPointOps - 将 ADD/UPDATE/DELETE 操作应用到现有 points
+func applyPointOps(existing []memind.InsightPoint, ops []insightLeafOp) []memind.InsightPoint {
+	result := make([]memind.InsightPoint, 0, len(existing))
+	updated := make(map[string]bool)
+	deleted := make(map[string]bool)
+
+	for _, op := range ops {
+		switch op.Op {
+		case "delete":
+			if op.PointID != "" {
+				deleted[op.PointID] = true
+			}
+		case "update":
+			if op.PointID != "" {
+				updated[op.PointID] = true
+			}
+		}
+	}
+
+	for _, p := range existing {
+		if deleted[p.PointID] {
+			continue
+		}
+		if updated[p.PointID] {
+			for _, op := range ops {
+				if op.Op == "update" && op.PointID == p.PointID {
+					p.Content = op.Content
+					if op.Type != "" {
+						p.Type = memind.PointType(op.Type)
+					}
+					if len(op.SourceItemIDs) > 0 {
+						p.SourceItemIDs = op.SourceItemIDs
+					}
+					break
+				}
+			}
+		}
+		result = append(result, p)
+	}
+
+	for _, op := range ops {
+		if op.Op == "add" && op.Content != "" {
+			result = append(result, memind.InsightPoint{
+				PointID:       fmt.Sprintf("sp-%d-%d", time.Now().UnixNano(), len(result)),
+				Type:          memind.PointType(op.Type),
+				Content:       op.Content,
+				SourceItemIDs: op.SourceItemIDs,
+			})
+		}
+	}
+
+	return result
 }
 
 // simpleHash - 基于字符串的简单哈希函数，用于去重

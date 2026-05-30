@@ -73,16 +73,6 @@ func (m *memoryImpl) Extract(req memind.ExtractionRequest) (*memind.ExtractionRe
 		return nil, err
 	}
 
-	// 将新条目和洞察写入向量存储（供语义搜索）
-	if m.vecStore != nil {
-		for _, item := range result.Items.NewItems {
-			m.vecStore.Store(req.MemoryID, item.Content, map[string]any{"type": "item", "itemId": item.ID})
-		}
-		for _, insight := range result.Insights.Insights {
-			m.vecStore.Store(req.MemoryID, insight.PointsContent(), map[string]any{"type": "insight", "insight_id": insight.ID})
-		}
-	}
-
 	// 提取完成后按洞察类型执行树重组织
 	if len(result.Insights.Insights) > 0 && m.reorganizer != nil {
 		cfg := memind.DefaultInsightTreeConfig()

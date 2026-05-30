@@ -45,7 +45,7 @@ type weflowMessagesResponse struct {
 
 // ---------- HTTP 工具 ----------
 
-var httpClient = &http.Client{Timeout: 300 * time.Second}
+var httpClient = &http.Client{Timeout: 600 * time.Second}
 
 func weflowGet[T any](url, token string) (*T, error) {
 	req, _ := http.NewRequest("GET", url, nil)
@@ -137,7 +137,7 @@ func TestImportWeChatContact(t *testing.T) {
 	} else {
 		t.Logf("无断点，拉取全部消息")
 	}
-	since = 0
+	//since = 0
 	// 拉取消息（GET）
 	const fetchLimit = 500
 	t.Logf("拉取最近 %d 条消息 GET (since=%d)...", fetchLimit, since)
@@ -192,7 +192,7 @@ func TestImportWeChatContact(t *testing.T) {
 	config := map[string]any{"enableInsight": true, "scope": "user", "language": "Chinese"}
 
 	extractURL := memindBase + "/open/v1/memory/sync/extract"
-	batchSize := 50
+	batchSize := 15
 	totalExtracted := 0
 
 	for i := 0; i < len(allMessages); i += batchSize {
@@ -221,7 +221,7 @@ func TestImportWeChatContact(t *testing.T) {
 		}
 
 		// 直接提取
-		t.Logf("提交第 %d~%d 条...", i+1, end)
+		t.Logf("提取第 %d~%d 条...", i+1, end)
 		raw, err := memindPost(extractURL, map[string]any{
 			"memoryId": memID,
 			"content":  map[string]string{"type": "ConversationContent", "content": conversation.String()},

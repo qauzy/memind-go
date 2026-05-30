@@ -1,6 +1,7 @@
 package retrieval
 
 import (
+	"fmt"
 	"log"
 	"math"
 	"sort"
@@ -106,7 +107,7 @@ func (s *SimpleStrategy) Retrieve(ctx QueryContext, config memind.RetrievalConfi
 	for _, r := range merged {
 		if r.SourceType == "INSIGHT" {
 			rInsights = append(rInsights, memind.RetrievedInsight{
-				ID: r.SourceID, Text: r.Text,
+				ID: r.SourceID, Text: r.Text, VectorScore: r.VectorScore, FinalScore: r.FinalScore,
 			})
 		} else if r.SourceType == "RAW_DATA" {
 			rRawData = append(rRawData, memind.RetrievedRawData{
@@ -147,14 +148,18 @@ func (s *SimpleStrategy) searchInsights(memoryID memind.MemoryId, query string, 
 
 	var results []ScoredResult
 	for _, vr := range vecResults {
-		id, _ := extractInsightID(vr.Metadata)
+		id, found := extractInsightID(vr.Metadata)
 		text := vr.Text
-		if ins, ok := insightMap[id]; ok {
-			text = ins.PointsContent()
+		sourceID := vr.VectorID
+		if found {
+			sourceID = fmt.Sprintf("insight-%d", id)
+			if ins, ok := insightMap[id]; ok {
+				text = ins.PointsContent()
+			}
 		}
 		results = append(results, ScoredResult{
 			SourceType:  "INSIGHT",
-			SourceID:    vr.VectorID,
+			SourceID:    sourceID,
 			Text:        text,
 			VectorScore: vr.Score,
 			FinalScore:  float64(vr.Score),

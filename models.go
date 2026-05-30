@@ -397,9 +397,11 @@ type RetrievedItem struct {
 
 // RetrievedInsight - 检索返回的单条洞察
 type RetrievedInsight struct {
-	ID   string      `json:"id"`
-	Text string      `json:"text"`
-	Tier InsightTier `json:"tier,omitempty"`
+	ID          string      `json:"id"`
+	Text        string      `json:"text"`
+	VectorScore float32     `json:"vectorScore"`
+	FinalScore  float64     `json:"finalScore"`
+	Tier        InsightTier `json:"tier,omitempty"`
 }
 
 // RetrievedRawData - 检索返回的原始数据摘要
